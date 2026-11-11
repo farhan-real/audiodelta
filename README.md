@@ -1,6 +1,6 @@
-# Audiodelta
+# audiodelta
 
-**Audiodelta** is a modular audio engineering quality assurance, structural arrangement diffing, and sample comparison engine. Engineered for mix engineers, mastering houses, audio software developers, and music supervisors, it analyzes and compares two audio tracks across loudness standards, dynamic punch, inter-sample true peaks, multi-window stereo phase fields, and harmonic/timbral snippet alignments.
+**audiodelta** is a modular audio engineering quality assurance, structural arrangement diffing, and sample comparison engine. Engineered for mix engineers, mastering houses, audio software developers, and music supervisors, it analyzes and compares two audio tracks across loudness standards, dynamic punch, inter-sample true peaks, multi-window stereo phase fields, and harmonic/timbral snippet alignments.
 
 ---
 
@@ -38,49 +38,39 @@
 
 ---
 
-## Project Structure
+## Installation & Virtual Environment Setup
 
-```text
-audiodelta/
-├── core/
-│   ├── __init__.py      # Public exports and package definition
-│   ├── constants.py     # Filter taps, frequency limits, pitch profiles
-│   ├── models.py        # Dataclasses (MatchedSnippet, StereoAudit, TrackAnalysis)
-│   ├── utils.py         # Time string formatting and interval subtraction arithmetic
-│   ├── peak.py          # Sample peak and polyphase FIR true-peak engine
-│   ├── stereo.py        # Stereo field, sliding correlation, and mid/side analysis
-│   ├── features.py      # Welch PSD, key detection, MFCC/chroma, track analysis
-│   ├── snippets.py      # Diagonal cross-correlation and snippet deduplication
-│   ├── coverage.py      # Bipartite interval subtraction allocator
-│   ├── report.py        # Dual-mode console report formatter (simple & precise)
-│   └── cli.py           # Argument parser and CLI execution entry point
-├── tests/
-│   ├── __init__.py
-│   ├── testmodels.py    # Dataclass initialization and field validation tests
-│   ├── testutils.py     # Time formatting and interval subtraction unit tests
-│   ├── testpeak.py      # Sample peak and true-peak DSP oversampling tests
-│   ├── teststereo.py    # Mono, stereo, anti-phase, and multichannel tests
-│   ├── testfeatures.py  # Key estimation, spectral balance, and feature extraction tests
-│   ├── testsnippets.py  # Feature resampling, diagonal matching, and deduplication tests
-│   ├── testcoverage.py  # Bipartite non-overlapping allocation and edit gap tests
-│   ├── testreport.py    # Output format validation for simple and precise modes
-│   └── testintegration.py # End-to-end integration and CLI pipeline tests
-├── main.py              # Top-level executable runner
-└── pytest.ini           # Pytest test discovery configuration
+### 1. Prerequisites
+- Python 3.8 or higher installed on your system
+- `libsndfile` installed (standard on macOS and modern Linux distributions; bundled with wheels on Windows)
+
+### 2. Create and Activate Virtual Environment (`venv`)
+
+Isolate your installation by creating and activating a local virtual environment:
+
+#### On macOS and Linux:
+```bash
+python3 -m venv venv
+source venv/bin/activate
 ```
 
----
+#### On Windows (Command Prompt):
+```cmd
+python -m venv venv
+venv\Scripts\activate.bat
+```
 
-## Installation
+#### On Windows (PowerShell):
+```powershell
+python -m venv venv
+venv\Scripts\Activate.ps1
+```
 
-### Prerequisites
-- Python 3.8 or higher
-- `libsndfile` installed on your system (standard on macOS and Linux; bundled on Windows)
-
-### Dependencies
-Install the required dependencies via `pip`:
+### 3. Install Dependencies
+With the virtual environment active, install the required packages:
 
 ```bash
+pip install --upgrade pip
 pip install numpy scipy librosa soundfile pyloudnorm pytest
 ```
 
@@ -88,7 +78,7 @@ pip install numpy scipy librosa soundfile pyloudnorm pytest
 
 ## CLI Usage
 
-Run comparisons directly from the command line using `main.py`:
+Run comparisons directly using the Python interpreter inside your active virtual environment:
 
 ```bash
 python main.py <song_a> <song_b> [options]
@@ -342,15 +332,13 @@ print_full_report(track_a, track_b, snippets, mode="precise")
 
 ## Running Unit Tests
 
-The test suite provides complete coverage across individual math routines, edge cases (silence, mono fallback, phase cancellations, clipping overshoots, chunking boundaries), and end-to-end integration workflows.
-
-Run all tests using `pytest`:
+With your virtual environment active, run the test suite using `pytest`:
 
 ```bash
 pytest
 ```
 
-To run with verbose output:
+To run with verbose test output:
 
 ```bash
 pytest -v
@@ -369,6 +357,40 @@ pytest -v
 
 ---
 
+## Project Structure
+
+```text
+audiodelta/
+├── core/
+│   ├── __init__.py      # Public exports and package definition
+│   ├── constants.py     # Filter taps, frequency limits, pitch profiles
+│   ├── models.py        # Dataclasses (MatchedSnippet, StereoAudit, TrackAnalysis)
+│   ├── utils.py         # Time string formatting and interval subtraction arithmetic
+│   ├── peak.py          # Sample peak and polyphase FIR true-peak engine
+│   ├── stereo.py        # Stereo field, sliding correlation, and mid/side analysis
+│   ├── features.py      # Welch PSD, key detection, MFCC/chroma, track analysis
+│   ├── snippets.py      # Diagonal cross-correlation and snippet deduplication
+│   ├── coverage.py      # Bipartite interval subtraction allocator
+│   ├── report.py        # Dual-mode console report formatter (simple & precise)
+│   └── cli.py           # Argument parser and CLI execution entry point
+├── tests/
+│   ├── __init__.py
+│   ├── testmodels.py    # Dataclass initialization and field validation tests
+│   ├── testutils.py     # Time formatting and interval subtraction unit tests
+│   ├── testpeak.py      # Sample peak and true-peak DSP oversampling tests
+│   ├── teststereo.py    # Mono, stereo, anti-phase, and multichannel tests
+│   ├── testfeatures.py  # Key estimation, spectral balance, and feature extraction tests
+│   ├── testsnippets.py  # Feature resampling, diagonal matching, and deduplication tests
+│   ├── testcoverage.py  # Bipartite non-overlapping allocation and edit gap tests
+│   ├── testreport.py    # Output format validation for simple and precise modes
+│   └── testintegration.py # End-to-end integration and CLI pipeline tests
+├── main.py              # Top-level executable runner
+├── pytest.ini           # Pytest test discovery configuration
+└── README.md            # Project documentation and usage guide
+```
+
+---
+
 ## License
 
-MIT License. Engineered for open source audio quality control, production, and mastering research.
+Audiodelta is open source under the MIT License.
