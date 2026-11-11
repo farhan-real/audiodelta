@@ -63,7 +63,7 @@ def test_extract_features_empty():
     assert comb.shape == (25, 0)
 
 
-def test_extract_features_sine_normalizations():
+def test_extract_features_zero_mean_chroma_and_unit_norm():
     sr = 22050
     t = np.linspace(0, 1.5, int(sr * 1.5), endpoint=False)
     y = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
@@ -75,6 +75,11 @@ def test_extract_features_sine_normalizations():
     assert c.shape[1] > 0
     assert c.shape[1] == m.shape[1] == comb.shape[1]
 
+    # Verify chroma is zero-mean centered across pitch classes per frame
+    c_means = np.mean(c, axis=0)
+    assert np.allclose(c_means, 0.0, atol=1e-4)
+
+    # Verify column Euclidean norms are approximately 1.0
     c_norms = np.linalg.norm(c, axis=0)
     assert np.allclose(c_norms, 1.0, atol=1e-3)
 
@@ -102,14 +107,12 @@ def test_analyze_track_synthetic_wav_with_and_without_progress(capsys):
         wav_path = Path(tmp_dir) / "synth.wav"
         sf.write(str(wav_path), stereo_wave, sr)
 
-        # Run with show_progress=True
         analysis_prog = analyze_track(wav_path, show_progress=True)
         out = capsys.readouterr().out
         assert "[1/6]" in out
         assert "[6/6]" in out
         assert analysis_prog.duration == pytest.approx(duration, abs=0.05)
 
-        # Run with show_progress=False
         analysis_quiet = analyze_track(wav_path, show_progress=False)
         out_quiet = capsys.readouterr().out
         assert out_quiet == ""

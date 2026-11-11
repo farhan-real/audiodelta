@@ -91,8 +91,8 @@ def compute_spectral_balance(y_raw: np.ndarray, sr: int) -> Dict[str, float]:
 def extract_features(y_mono: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Extracts independent harmonic (chroma) and timbral (CMVN MFCC) features.
-    Normalizes each feature group to unit Euclidean length independently before
-    applying the nominal 70/30 weighting.
+    Applies pitch-class mean centering to chroma vectors to prevent spurious non-zero
+    cross-correlations between distinct songs with different musical structures.
     """
     try:
         chroma = librosa.feature.chroma_cqt(
@@ -127,15 +127,17 @@ def extract_features(y_mono: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.nda
     chroma = chroma[:, :n_frames]
     mfcc = mfcc[:, :n_frames]
 
-    # Normalize pure chroma per frame
-    chroma_norm = chroma / np.maximum(np.linalg.norm(chroma, axis=0, keepdims=True), EPS)
+    # Mean-center chroma across pitch classes per frame.
+    # Non-negative raw chroma creates high artificial baseline similarity (~0.65-0.75)
+    # between unrelated songs sharing common chords. Centering makes unrelated frames ~0.0.
+    chroma_mean = np.mean(chroma, axis=0, keepdims=True)
+    chroma_centered = chroma - chroma_mean
+    chroma_norm = chroma_centered / np.maximum(np.linalg.norm(chroma_centered, axis=0, keepdims=True), EPS)
 
     # CMVN on MFCC across time
     mfcc_mean = np.mean(mfcc, axis=1, keepdims=True)
     mfcc_std = np.std(mfcc, axis=1, keepdims=True)
     mfcc_cmvn = (mfcc - mfcc_mean) / np.maximum(mfcc_std, EPS)
-
-    # Normalize MFCC per frame so expected group norm equals 1.0
     mfcc_norm = mfcc_cmvn / np.maximum(np.linalg.norm(mfcc_cmvn, axis=0, keepdims=True), EPS)
 
     # Combine with calibrated 70/30 energy weighting

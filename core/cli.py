@@ -8,7 +8,7 @@ import sys
 from typing import List, Optional
 
 from core.features import analyze_track
-from core.report import print_full_report
+from core.report import generate_html_report, print_full_report
 from core.snippets import find_snippets
 from core.utils import should_use_color
 
@@ -32,14 +32,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-tempo-rescale", action="store_true", help="Disable automatic tempo ratio scaling for snippet matching")
     parser.add_argument("--no-progress", action="store_true", help="Disable progress bars and status updates")
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI color codes in console output")
-    parser.add_argument("--all-snippets", action="store_true", help="Show all shared snippets without collapsing")
-    parser.add_argument("--max-snippets", type=int, default=10, help="Maximum number of snippets to display before collapsing (default: 10)")
-    parser.add_argument("--collapse-snippets", action="store_true", help="Collapse shared snippet table into a high-level summary count")
+    parser.add_argument("--html", type=Path, default=None, help="Export clickable interactive HTML report to file path")
+    parser.add_argument("--open-html", action="store_true", help="Automatically open generated HTML report in default browser")
     return parser
 
 
 def run(argv: Optional[List[str]] = None) -> int:
-    """Executes the audiodelta CLI command pipeline with progress and color support."""
+    """Executes the audiodelta CLI command pipeline with progress, color, and HTML options."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -48,9 +47,6 @@ def run(argv: Optional[List[str]] = None) -> int:
         return 1
     if not (0.0 <= args.threshold <= 1.0):
         sys.stderr.write("Execution error: --threshold must be between 0.0 and 1.0\n")
-        return 1
-    if args.max_snippets <= 0:
-        sys.stderr.write("Execution error: --max-snippets must be at least 1\n")
         return 1
 
     show_progress = not args.no_progress
@@ -77,11 +73,20 @@ def run(argv: Optional[List[str]] = None) -> int:
             track_b,
             snippets,
             mode=args.mode,
-            use_color=use_color,
-            max_snippets=args.max_snippets,
-            all_snippets=args.all_snippets,
-            collapse_snippets=args.collapse_snippets
+            use_color=use_color
         )
+
+        if args.html is not None or args.open_html:
+            html_out = args.html if args.html is not None else Path("audiodelta_report.html")
+            generate_html_report(
+                track_a,
+                track_b,
+                snippets,
+                output_path=html_out,
+                mode=args.mode,
+                auto_open=args.open_html
+            )
+            print(f"\n[+] Interactive clickable HTML report written to: {html_out.resolve()}")
 
     except Exception as err:
         sys.stderr.write(f"\nExecution error: {err}\n")

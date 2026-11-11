@@ -31,7 +31,7 @@ def resample_feature_matrix(features: np.ndarray, ratio: float) -> np.ndarray:
 
 def consolidate_snippets(
     snippets: List[MatchedSnippet],
-    tolerance: float = 0.5
+    tolerance: float = 1.0
 ) -> List[MatchedSnippet]:
     """
     Consolidates contiguous or adjacent snippet fragments into unified arrangement blocks.
@@ -54,7 +54,6 @@ def consolidate_snippets(
             total_dur_a = (current.a_end - prev.a_start)
             total_dur_b = (current.b_end - prev.b_start)
 
-            # Weighted average similarity based on individual segment durations
             w_prev = max(EPS, prev.duration_a)
             w_curr = max(EPS, current.duration_a)
             total_w = w_prev + w_curr
@@ -91,6 +90,7 @@ def find_snippets(
 ) -> List[MatchedSnippet]:
     """
     Finds matching shared musical snippets between two analyzed tracks with cross-correlation progress.
+    Applies competitive cross-diagonal suppression to eliminate false positive chord cross-talk.
     """
     if a.combined_features.size == 0 or b.combined_features.size == 0:
         return []
@@ -178,44 +178,63 @@ def find_snippets(
                             harm_score = score
                             timb_score = score
 
-                        candidates.append(MatchedSnippet(
-                            a_start=a_start,
-                            a_end=a_end,
-                            b_start=b_start,
-                            b_end=b_end,
-                            duration_a=dur_a,
-                            duration_b=dur_b,
-                            speed_ratio=speed_ratio,
-                            composite_similarity=score,
-                            harmonic_similarity=float(np.clip(harm_score, 0.0, 1.0)),
-                            timbral_similarity=float(np.clip(timb_score, 0.0, 1.0))
-                        ))
+                        # Both harmonic and timbral similarities must exceed base consistency gates
+                        # Prevents different songs with similar EQ but different notes from matching
+                        if harm_score >= 0.50 and timb_score >= 0.40:
+                            candidates.append(MatchedSnippet(
+                                a_start=a_start,
+                                a_end=a_end,
+                                b_start=b_start,
+                                b_end=b_end,
+                                duration_a=dur_a,
+                                duration_b=dur_b,
+                                speed_ratio=speed_ratio,
+                                composite_similarity=score,
+                                harmonic_similarity=float(np.clip(harm_score, 0.0, 1.0)),
+                                timbral_similarity=float(np.clip(timb_score, 0.0, 1.0))
+                            ))
 
     if bar is not None:
         bar.finish()
 
+    # Sort candidates by structural significance: score * sqrt(duration)
     candidates.sort(key=lambda x: (x.composite_similarity * math.sqrt(x.duration_a)), reverse=True)
     filtered: List[MatchedSnippet] = []
 
+    # Competitive non-maximum suppression:
+    # Discards spurious matches where the same 3-second slice in Track A matches dozens
+    # of unrelated timestamps across Track B due to repetitive chord structures.
     for cand in candidates:
-        overlap = False
+        suppress = False
         cand_c = cand.b_start - cand.speed_ratio * cand.a_start
+
         for kept in filtered:
             kept_c = kept.b_start - kept.speed_ratio * kept.a_start
+            ov_a = max(0.0, min(cand.a_end, kept.a_end) - max(cand.a_start, kept.a_start))
+            ov_b = max(0.0, min(cand.b_end, kept.b_end) - max(cand.b_start, kept.b_start))
+
+            # Case 1: Same or adjacent diagonal offset
             if abs(cand_c - kept_c) <= max(2 * hop_sec, 0.35):
-                ov_a = max(0.0, min(cand.a_end, kept.a_end) - max(cand.a_start, kept.a_start))
                 if ov_a / (min(cand.duration_a, kept.duration_a) + EPS) > 0.40:
-                    overlap = True
+                    suppress = True
                     break
             else:
-                ov_a = max(0.0, min(cand.a_end, kept.a_end) - max(cand.a_start, kept.a_start))
-                ov_b = max(0.0, min(cand.b_end, kept.b_end) - max(cand.b_start, kept.b_start))
-                if (ov_a / (cand.duration_a + EPS) > 0.8) and (ov_b / (cand.duration_b + EPS) > 0.8):
-                    overlap = True
+                # Case 2: Different diagonal. Track A overlap is high, but Track B points elsewhere.
+                # A musical snippet cannot appear at 50 random places simultaneously unless it's a genuine
+                # identical sample hook with very high confidence (>= 0.88).
+                ratio_a = ov_a / (cand.duration_a + EPS)
+                if ratio_a > 0.50 and cand.composite_similarity < 0.88:
+                    suppress = True
                     break
-        if not overlap:
+
+                # Case 3: Both tracks substantially covered
+                if (ov_a / (cand.duration_a + EPS) > 0.75) and (ov_b / (cand.duration_b + EPS) > 0.75):
+                    suppress = True
+                    break
+
+        if not suppress:
             filtered.append(cand)
 
-    consolidated = consolidate_snippets(filtered, tolerance=0.5)
+    consolidated = consolidate_snippets(filtered, tolerance=1.0)
     consolidated.sort(key=lambda x: x.a_start)
     return consolidated

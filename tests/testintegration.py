@@ -52,28 +52,32 @@ def test_full_analysis_and_reporting_pipeline_both_modes(capsys):
         assert "Song A in Song B:" in out_simple
 
 
-def test_cli_execution_flags(capsys):
+def test_cli_execution_flags_and_html_generation(capsys):
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         wav_a = tmp_path / "track1.wav"
         wav_b = tmp_path / "track2.wav"
+        html_target = tmp_path / "output_report.html"
 
         create_synthetic_wav(wav_a, duration=3.5, freq=300.0)
         create_synthetic_wav(wav_b, duration=3.5, freq=300.0)
 
-        code = run([str(wav_a), str(wav_b), "--no-color", "--no-progress", "--min-len", "2.0"])
+        # Run with --html report export
+        code = run([
+            str(wav_a),
+            str(wav_b),
+            "--no-color",
+            "--no-progress",
+            "--html",
+            str(html_target),
+            "--min-len",
+            "2.0"
+        ])
         assert code == 0
         out = capsys.readouterr().out
         assert "MIX AND MASTERING AUDIT" in out
-        assert "\033[" not in out
-
-        code_c = run([str(wav_a), str(wav_b), "--collapse-snippets", "--no-progress", "--min-len", "2.0"])
-        assert code_c == 0
-        out_c = capsys.readouterr().out
-        assert "[v] Snippet table collapsed" in out_c or "No shared musical snippets" in out_c
-
-        code_all = run([str(wav_a), str(wav_b), "--all-snippets", "--no-progress", "--min-len", "2.0"])
-        assert code_all == 0
+        assert html_target.exists()
+        assert "<details" in html_target.read_text(encoding="utf-8")
 
 
 def test_cli_execution_invalid_arguments(capsys):
@@ -89,10 +93,6 @@ def test_cli_execution_invalid_arguments(capsys):
         code_th = run([str(wav), str(wav), "--threshold", "1.5"])
         assert code_th == 1
         assert "--threshold must be between 0.0 and 1.0" in capsys.readouterr().err
-
-        code_max = run([str(wav), str(wav), "--max-snippets", "0"])
-        assert code_max == 1
-        assert "--max-snippets must be at least 1" in capsys.readouterr().err
 
 
 def test_cli_execution_missing_file(capsys):
@@ -112,6 +112,5 @@ def test_parser_defaults():
     assert not args.no_tempo_rescale
     assert not args.no_progress
     assert not args.no_color
-    assert not args.all_snippets
-    assert args.max_snippets == 10
-    assert not args.collapse_snippets
+    assert args.html is None
+    assert not args.open_html

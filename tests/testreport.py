@@ -1,12 +1,18 @@
 """
-Unit tests for audiodelta dual-mode report generation, color formatting, and overhauled wording.
+Unit tests for audiodelta dual-mode report generation, color formatting, and interactive HTML export.
 """
 
 from pathlib import Path
+import tempfile
 import numpy as np
 
 from core.models import MatchedSnippet, StereoAudit, TrackAnalysis
-from core.report import print_mix_deltas, print_snippet_report, print_track_card
+from core.report import (
+    generate_html_report,
+    print_mix_deltas,
+    print_snippet_report,
+    print_track_card,
+)
 
 
 def build_sample_analysis(name: str = "track.wav", lufs: float = -14.0) -> TrackAnalysis:
@@ -139,7 +145,6 @@ def test_snippet_report_overhauled_wording(capsys):
         timbral_similarity=0.88
     )
 
-    # Simple mode with overhauled wording
     print_snippet_report(t_a, t_b, [snippet], mode="simple", use_color=False)
     out_simple = capsys.readouterr().out
     assert "SHARED SECTIONS" in out_simple
@@ -150,7 +155,6 @@ def test_snippet_report_overhauled_wording(capsys):
     assert "New in Song B (added / extended):" in out_simple
     assert "Bipartite Allocation" not in out_simple
 
-    # Precise mode
     print_snippet_report(t_a, t_b, [snippet], mode="precise", use_color=False)
     out_precise = capsys.readouterr().out
     assert "SHARED SNIPPETS AND SAMPLES" in out_precise
@@ -161,24 +165,31 @@ def test_snippet_report_overhauled_wording(capsys):
     assert "[ADDED]" in out_precise
 
 
-def test_snippet_report_collapsible_behavior(capsys):
+def test_generate_html_report_clickable_details():
     t_a = build_sample_analysis("a.wav")
     t_b = build_sample_analysis("b.wav")
+    snippet = MatchedSnippet(
+        a_start=10.0,
+        a_end=40.0,
+        b_start=20.0,
+        b_end=50.0,
+        duration_a=30.0,
+        duration_b=30.0,
+        speed_ratio=1.0,
+        composite_similarity=0.94,
+        harmonic_similarity=0.96,
+        timbral_similarity=0.91
+    )
 
-    snippets = [
-        MatchedSnippet(float(i * 10), float(i * 10 + 4), float(i * 10), float(i * 10 + 4), 4.0, 4.0, 1.0, 0.90, 0.90, 0.90)
-        for i in range(15)
-    ]
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        report_file = Path(tmp_dir) / "report.html"
+        generate_html_report(t_a, t_b, [snippet], report_file, mode="simple", auto_open=False)
 
-    print_snippet_report(t_a, t_b, snippets, mode="simple", use_color=False, max_snippets=10, all_snippets=False)
-    out_default = capsys.readouterr().out
-    assert "[+] Showing 10 of 15 sections (5 additional sections collapsed)." in out_default
-    assert "Run with '--all-snippets' to display all" in out_default
-
-    print_snippet_report(t_a, t_b, snippets, mode="simple", use_color=False, max_snippets=10, all_snippets=True)
-    out_all = capsys.readouterr().out
-    assert "additional sections collapsed" not in out_all
-
-    print_snippet_report(t_a, t_b, snippets, mode="simple", use_color=False, collapse_snippets=True)
-    out_collapsed = capsys.readouterr().out
-    assert "[v] Snippet table collapsed (15 sections detected)." in out_collapsed
+        assert report_file.exists()
+        content = report_file.read_text(encoding="utf-8")
+        # Confirms native clickable details and summary tags are generated
+        assert "<details open>" in content
+        assert "<summary>Arrangement Overview (Click to collapse/expand)</summary>" in content
+        assert "<summary>Shared Sections (1 detected &bull; Click to collapse/expand)</summary>" in content
+        assert "Song A in Song B:" in content
+        assert "94.0%" in content

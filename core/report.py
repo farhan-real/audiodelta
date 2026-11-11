@@ -1,9 +1,12 @@
 """
-Dual-mode console reporting for audiodelta supporting intuitive simple wording,
-rigorous precise audio engineering specs, ANSI colors, and collapsible section views.
+Dual-mode console reporting for audiodelta supporting simple/precise wording,
+ANSI terminal coloring, and interactive clickable HTML report generation.
 """
 
-from typing import List
+from pathlib import Path
+from typing import List, Optional
+import webbrowser
+
 from core.coverage import compute_verified_coverage
 from core.models import MatchedSnippet, TrackAnalysis
 from core.utils import Colors, colorize, fmt_time
@@ -227,14 +230,9 @@ def print_snippet_report(
     b: TrackAnalysis,
     matches: List[MatchedSnippet],
     mode: str = "precise",
-    use_color: bool = True,
-    max_snippets: int = 10,
-    all_snippets: bool = False,
-    collapse_snippets: bool = False
+    use_color: bool = True
 ) -> None:
-    """
-    Prints snippet match list and arrangement breakdown with collapsible display.
-    """
+    """Prints snippet match list and arrangement breakdown."""
     rule = colorize("=" * 65, Colors.CYAN, use_color)
     subrule = colorize("-" * 65, Colors.CYAN, use_color)
     header_shared = "SHARED SECTIONS" if mode == "simple" else "SHARED SNIPPETS AND SAMPLES"
@@ -247,13 +245,6 @@ def print_snippet_report(
 
     if not matches:
         print("  No shared musical snippets detected above threshold.")
-    elif collapse_snippets:
-        collapse_msg = colorize(
-            f"  [v] Snippet table collapsed ({total_matches} sections detected). Pass '--all-snippets' to expand.",
-            Colors.DIM,
-            use_color
-        )
-        print(collapse_msg)
     else:
         if mode == "simple":
             print(f"{'Song A':<18}{'Song B':<18}{'Length':<10}{'Match':<11}{'Melody':<10}{'Tone'}")
@@ -261,10 +252,7 @@ def print_snippet_report(
             print(f"{'Song A Location':<18}{'Song B Location':<18}{'Duration':<10}{'Composite':<11}{'Harmonic':<10}{'Timbral'}")
         print("-" * 75)
 
-        display_limit = total_matches if all_snippets else min(total_matches, max_snippets)
-        displayed_matches = matches[:display_limit]
-
-        for m in displayed_matches:
+        for m in matches:
             loc_a = f"{fmt_time(m.a_start)}-{fmt_time(m.a_end)}"
             loc_b = f"{fmt_time(m.b_start)}-{fmt_time(m.b_end)}"
             dur = f"{m.duration_a:.1f} s"
@@ -279,16 +267,6 @@ def print_snippet_report(
             harm = f"{m.harmonic_similarity * 100:.1f}%"
             timb = f"{m.timbral_similarity * 100:.1f}%"
             print(f"{loc_a:<18}{loc_b:<18}{dur:<10}{comp_str:<20}{harm:<10}{timb}")
-
-        if not all_snippets and total_matches > max_snippets:
-            hidden = total_matches - max_snippets
-            fold_note = colorize(
-                f"\n  [+] Showing {max_snippets} of {total_matches} sections ({hidden} additional sections collapsed).\n"
-                f"      Run with '--all-snippets' to display all, or '--max-snippets <N>' to adjust.",
-                Colors.CYAN,
-                use_color
-            )
-            print(fold_note)
 
     sec_a, sec_b, pct_a, pct_b, gaps_a, gaps_b = compute_verified_coverage(a.duration, b.duration, matches)
 
@@ -332,27 +310,138 @@ def print_snippet_report(
                 print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
 
 
+def generate_html_report(
+    a: TrackAnalysis,
+    b: TrackAnalysis,
+    matches: List[MatchedSnippet],
+    output_path: Path,
+    mode: str = "precise",
+    auto_open: bool = False
+) -> None:
+    """
+    Generates an interactive, standalone HTML comparison report with native
+    clickable <details><summary> accordions to expand and collapse shared sections.
+    """
+    sec_a, sec_b, pct_a, pct_b, gaps_a, gaps_b = compute_verified_coverage(a.duration, b.duration, matches)
+
+    html_lines = [
+        "<!DOCTYPE html>",
+        "<html lang='en'>",
+        "<head>",
+        "  <meta charset='utf-8'>",
+        "  <meta name='viewport' content='width=device-width, initial-scale=1.0'>",
+        f"  <title>audiodelta: {a.path.name} vs {b.path.name}</title>",
+        "  <style>",
+        "    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }",
+        "    .container { max-width: 960px; margin: 0 auto; }",
+        "    h1, h2, h3 { color: #38bdf8; margin-top: 0; }",
+        "    .card { background: #1e293b; border-radius: 8px; padding: 20px; margin-bottom: 20px; border: 1px solid #334155; }",
+        "    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }",
+        "    details { background: #1e293b; border-radius: 8px; margin-bottom: 16px; border: 1px solid #334155; padding: 12px 16px; }",
+        "    summary { font-weight: bold; cursor: pointer; color: #38bdf8; outline: none; user-select: none; font-size: 1.1em; }",
+        "    summary:hover { color: #7dd3fc; }",
+        "    table { width: 100%; border-collapse: collapse; margin-top: 12px; }",
+        "    th, td { text-align: left; padding: 10px; border-bottom: 1px solid #334155; font-size: 0.95em; }",
+        "    th { color: #94a3b8; }",
+        "    .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em; }",
+        "    .badge-green { background: #065f46; color: #34d399; }",
+        "    .badge-yellow { background: #854d0e; color: #fde047; }",
+        "    .badge-blue { background: #0369a1; color: #7dd3fc; }",
+        "    ul { margin: 8px 0; padding-left: 20px; }",
+        "    li { margin-bottom: 4px; }",
+        "  </style>",
+        "</head>",
+        "<body>",
+        "  <div class='container'>",
+        f"    <h1>audiodelta Analysis Report</h1>",
+        f"    <p style='color:#94a3b8'>Comparing <strong>{a.path.name}</strong> (Song A) vs <strong>{b.path.name}</strong> (Song B)</p>",
+        "    <div class='grid'>",
+        "      <div class='card'>",
+        f"        <h3>Song A: {a.path.name}</h3>",
+        f"        <p><strong>Length:</strong> {fmt_time(a.duration)} ({a.duration:.1f}s)<br>",
+        f"        <strong>Channels:</strong> {a.stereo.channel_layout_desc}<br>",
+        f"        <strong>Tempo:</strong> {a.bpm:.1f} BPM | <strong>Key:</strong> {_format_key_simple(a.key)}<br>",
+        f"        <strong>Loudness:</strong> {a.lufs:.1f} LUFS | <strong>Range:</strong> {a.lra:.1f} LU<br>",
+        f"        <strong>Peak:</strong> {a.sample_peak_dbfs:.2f} dBFS | <strong>True Peak:</strong> {a.true_peak_dbtp:.2f} dBTP<br>",
+        f"        <strong>Punch:</strong> {a.crest_factor_db:.1f} dB crest</p>",
+        "      </div>",
+        "      <div class='card'>",
+        f"        <h3>Song B: {b.path.name}</h3>",
+        f"        <p><strong>Length:</strong> {fmt_time(b.duration)} ({b.duration:.1f}s)<br>",
+        f"        <strong>Channels:</strong> {b.stereo.channel_layout_desc}<br>",
+        f"        <strong>Tempo:</strong> {b.bpm:.1f} BPM | <strong>Key:</strong> {_format_key_simple(b.key)}<br>",
+        f"        <strong>Loudness:</strong> {b.lufs:.1f} LUFS | <strong>Range:</strong> {b.lra:.1f} LU<br>",
+        f"        <strong>Peak:</strong> {b.sample_peak_dbfs:.2f} dBFS | <strong>True Peak:</strong> {b.true_peak_dbtp:.2f} dBTP<br>",
+        f"        <strong>Punch:</strong> {b.crest_factor_db:.1f} dB crest</p>",
+        "      </div>",
+        "    </div>",
+        "    <details open>",
+        "      <summary>Arrangement Overview (Click to collapse/expand)</summary>",
+        f"      <p style='margin-top:12px'><strong>Song A in Song B:</strong> {sec_a:.1f} s ({pct_a:.1f}% shared)<br>",
+        f"      <strong>Song B in Song A:</strong> {sec_b:.1f} s ({pct_b:.1f}% shared)</p>",
+    ]
+
+    if gaps_a:
+        html_lines.append("      <h4 style='color:#fde047;margin-bottom:6px'>Cut from Song A (missing in Song B):</h4><ul>")
+        for s, e in gaps_a:
+            html_lines.append(f"        <li>{fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)</li>")
+        html_lines.append("      </ul>")
+
+    if gaps_b:
+        html_lines.append("      <h4 style='color:#34d399;margin-bottom:6px'>New in Song B (added / extended):</h4><ul>")
+        for s, e in gaps_b:
+            html_lines.append(f"        <li>{fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)</li>")
+        html_lines.append("      </ul>")
+
+    html_lines.append("    </details>")
+
+    # Clickable Collapsible Shared Sections
+    section_count = len(matches)
+    html_lines.append(f"    <details open>")
+    html_lines.append(f"      <summary>Shared Sections ({section_count} detected &bull; Click to collapse/expand)</summary>")
+
+    if not matches:
+        html_lines.append("      <p style='margin-top:12px;color:#94a3b8'>No shared musical snippets detected above threshold.</p>")
+    else:
+        html_lines.append("      <table>")
+        html_lines.append("        <thead><tr><th>Song A</th><th>Song B</th><th>Length</th><th>Match Score</th><th>Melody Match</th><th>Tone Match</th></tr></thead>")
+        html_lines.append("        <tbody>")
+        for m in matches:
+            comp_val = m.composite_similarity * 100
+            badge_cls = "badge-green" if comp_val >= 90.0 else "badge-yellow"
+            html_lines.append(f"          <tr>")
+            html_lines.append(f"            <td>{fmt_time(m.a_start)} - {fmt_time(m.a_end)}</td>")
+            html_lines.append(f"            <td>{fmt_time(m.b_start)} - {fmt_time(m.b_end)}</td>")
+            html_lines.append(f"            <td>{m.duration_a:.1f}s</td>")
+            html_lines.append(f"            <td><span class='badge {badge_cls}'>{comp_val:.1f}%</span></td>")
+            html_lines.append(f"            <td>{m.harmonic_similarity * 100:.1f}%</td>")
+            html_lines.append(f"            <td>{m.timbral_similarity * 100:.1f}%</td>")
+            html_lines.append(f"          </tr>")
+        html_lines.append("        </tbody>")
+        html_lines.append("      </table>")
+
+    html_lines.append("    </details>")
+    html_lines.append("  </div>")
+    html_lines.append("</body>")
+    html_lines.append("</html>")
+
+    output_path.write_text("\n".join(html_lines), encoding="utf-8")
+    if auto_open:
+        try:
+            webbrowser.open(output_path.as_uri())
+        except Exception:
+            pass
+
+
 def print_full_report(
     a: TrackAnalysis,
     b: TrackAnalysis,
     matches: List[MatchedSnippet],
     mode: str = "precise",
-    use_color: bool = True,
-    max_snippets: int = 10,
-    all_snippets: bool = False,
-    collapse_snippets: bool = False
+    use_color: bool = True
 ) -> None:
-    """Prints the complete comparison report with color and collapsible snippet options."""
+    """Prints the complete comparison report with intuitive wording and optional coloring."""
     print_track_card("SONG A", a, mode=mode, use_color=use_color)
     print_track_card("SONG B", b, mode=mode, use_color=use_color)
     print_mix_deltas(a, b, mode=mode, use_color=use_color)
-    print_snippet_report(
-        a,
-        b,
-        matches,
-        mode=mode,
-        use_color=use_color,
-        max_snippets=max_snippets,
-        all_snippets=all_snippets,
-        collapse_snippets=collapse_snippets
-    )
+    print_snippet_report(a, b, matches, mode=mode, use_color=use_color)

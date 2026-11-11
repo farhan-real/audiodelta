@@ -12,6 +12,7 @@ from core.features import (
 from core.models import MatchedSnippet, StereoAudit, TrackAnalysis
 from core.peak import compute_peak_and_true_peak
 from core.report import (
+    generate_html_report,
     print_full_report,
     print_mix_deltas,
     print_snippet_report,
@@ -56,4 +57,5 @@ __all__ = [
     "print_mix_deltas",
     "print_snippet_report",
     "print_full_report",
+    "generate_html_report",
 ]
