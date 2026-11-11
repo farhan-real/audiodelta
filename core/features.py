@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import sys
 from typing import Dict, Tuple
+import warnings
 import librosa
 import numpy as np
 import pyloudnorm as pyln
@@ -22,7 +23,7 @@ from core.constants import (
 from core.models import TrackAnalysis
 from core.peak import compute_peak_and_true_peak
 from core.stereo import evaluate_stereo_field
-from core.utils import ProgressBar
+from core.utils import ProgressBar, suppress_c_stderr
 
 
 def estimate_key(chroma: np.ndarray) -> str:
@@ -158,7 +159,9 @@ def analyze_track(path: Path, show_progress: bool = True) -> TrackAnalysis:
             sys.stdout.flush()
 
     notify_step(1, "Loading and decoding audio stream...")
-    y_raw, sr = librosa.load(str(path), sr=None, mono=False)
+    with suppress_c_stderr(), warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        y_raw, sr = librosa.load(str(path), sr=None, mono=False)
     if y_raw.size == 0:
         raise ValueError(f"Empty audio file: {path}")
 

@@ -4,12 +4,15 @@ Unit tests and edge cases for time formatting, interval subtraction, progress ba
 
 import io
 import os
+import sys
+import pytest
 from core.utils import (
     Colors,
     ProgressBar,
     colorize,
     fmt_time,
     should_use_color,
+    suppress_c_stderr,
     subtract_intervals,
 )
 
@@ -146,3 +149,17 @@ def test_should_use_color():
         assert should_use_color(file=DummyTTY()) is False
     finally:
         os.environ.pop("NO_COLOR", None)
+
+
+def test_suppress_c_stderr():
+    with suppress_c_stderr():
+        os.write(sys.stderr.fileno(), b"silenced message\n")
+
+
+def test_suppress_c_stderr_exception_propagation():
+    class CustomCallerError(Exception):
+        pass
+
+    with pytest.raises(CustomCallerError, match="caller error"):
+        with suppress_c_stderr():
+            raise CustomCallerError("caller error must propagate")

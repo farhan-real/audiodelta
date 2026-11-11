@@ -30,6 +30,7 @@ from core.utils import (
     colorize,
     fmt_time,
     should_use_color,
+    suppress_c_stderr,
     subtract_intervals,
 )
 
@@ -41,6 +42,7 @@ __all__ = [
     "ProgressBar",
     "colorize",
     "should_use_color",
+    "suppress_c_stderr",
     "fmt_time",
     "subtract_intervals",
     "compute_peak_and_true_peak",

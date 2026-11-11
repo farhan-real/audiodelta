@@ -4,7 +4,8 @@ Utility functions for time formatting, interval subtraction, progress bars, and 
 
 import os
 import sys
-from typing import List, Optional, Tuple
+from contextlib import contextmanager
+from typing import Generator, List, Optional, Tuple
 
 
 class Colors:
@@ -40,6 +41,39 @@ def colorize(text: str, color_code: str, enabled: bool = True) -> str:
     if not enabled or not color_code:
         return text
     return f"{color_code}{text}{Colors.RESET}"
+
+
+@contextmanager
+def suppress_c_stderr() -> Generator[None, None, None]:
+    """Temporarily redirect low-level C library stderr output to the null device."""
+    redirected = False
+    saved_stderr_fd = -1
+    stderr_fileno = -1
+
+    try:
+        stderr_fileno = sys.stderr.fileno()
+        saved_stderr_fd = os.dup(stderr_fileno)
+        null_fd = os.open(os.devnull, os.O_WRONLY)
+        try:
+            sys.stderr.flush()
+            os.dup2(null_fd, stderr_fileno)
+            redirected = True
+        finally:
+            os.close(null_fd)
+    except (AttributeError, OSError, ValueError):
+        if saved_stderr_fd >= 0:
+            os.close(saved_stderr_fd)
+        saved_stderr_fd = -1
+
+    try:
+        yield
+    finally:
+        if redirected:
+            try:
+                sys.stderr.flush()
+                os.dup2(saved_stderr_fd, stderr_fileno)
+            finally:
+                os.close(saved_stderr_fd)
 
 
 class ProgressBar:
