@@ -137,26 +137,21 @@ def test_colorize_enabled_and_disabled():
 
 
 def test_color_helpers():
-    # Number helper
     assert c_num("124.0", enabled=True) == f"{Colors.BOLD_YELLOW}124.0{Colors.RESET}"
     assert c_num("124.0", enabled=False) == "124.0"
 
-    # Peak helper
     assert c_peak(0.5, enabled=True) == f"{Colors.BOLD_RED}0.50 dB{Colors.RESET}"
     assert c_peak(-0.5, enabled=True) == f"{Colors.BOLD_YELLOW}-0.50 dB{Colors.RESET}"
     assert c_peak(-3.0, enabled=True) == f"{Colors.BOLD_GREEN}-3.00 dB{Colors.RESET}"
     assert c_peak(0.5, enabled=False) == "0.50 dB"
 
-    # Correlation helper
     assert c_corr(0.95, enabled=True) == f"{Colors.BOLD_GREEN}+0.95{Colors.RESET}"
     assert c_corr(0.50, enabled=True) == f"{Colors.BOLD_YELLOW}+0.50{Colors.RESET}"
     assert c_corr(-0.20, enabled=True) == f"{Colors.BOLD_RED}-0.20{Colors.RESET}"
 
-    # Delta helper
     assert c_delta(2.0, "dB", enabled=True) == f"{Colors.BOLD_GREEN}+2.0 dB{Colors.RESET}"
     assert c_delta(-2.0, "dB", enabled=True) == f"{Colors.BOLD_YELLOW}-2.0 dB{Colors.RESET}"
 
-    # Percentage helper
     assert c_pct(95.0, enabled=True) == f"{Colors.BOLD_GREEN}95.0%{Colors.RESET}"
     assert c_pct(80.0, enabled=True) == f"{Colors.BOLD_YELLOW}80.0%{Colors.RESET}"
     assert c_pct(60.0, enabled=True) == f"{Colors.CYAN}60.0%{Colors.RESET}"
@@ -186,7 +181,18 @@ def test_should_use_color():
 def test_suppress_c_stderr():
     with suppress_c_stderr():
         try:
-            os.write(sys.stderr.fileno(), b"silenced message\n")
+            os.write(2, b"silenced message\n")
+        except Exception:
+            pass
+
+
+def test_suppress_c_stderr_with_none_or_custom_stderr(monkeypatch):
+    # Tests that when sys.stderr is None or a custom stream lacking a fileno,
+    # suppress_c_stderr safely falls back to descriptor 2 without crashing
+    monkeypatch.setattr(sys, "stderr", None)
+    with suppress_c_stderr():
+        try:
+            os.write(2, b"silenced message with None stderr\n")
         except Exception:
             pass
 
@@ -198,3 +204,45 @@ def test_suppress_c_stderr_exception_propagation():
     with pytest.raises(CustomCallerError):
         with suppress_c_stderr():
             raise CustomCallerError("caller error must propagate without generator error")
+
+
+def test_suppress_c_stderr_setup_failure_cleanup(monkeypatch):
+    closed_fds = []
+    real_close = os.close
+
+    def mock_close(fd):
+        closed_fds.append(fd)
+        real_close(fd)
+
+    def mock_open(*args, **kwargs):
+        raise OSError("mock open error")
+
+    monkeypatch.setattr(sys.stderr, "fileno", lambda: 2)
+    monkeypatch.setattr(os, "close", mock_close)
+    monkeypatch.setattr(os, "open", mock_open)
+
+    with suppress_c_stderr():
+        pass
+
+    assert len(closed_fds) >= 1
+
+
+def test_suppress_c_stderr_setup_failure_after_open(monkeypatch):
+    closed_fds = []
+    real_close = os.close
+
+    def mock_close(fd):
+        closed_fds.append(fd)
+        real_close(fd)
+
+    def mock_dup2(*args, **kwargs):
+        raise OSError("mock dup2 error")
+
+    monkeypatch.setattr(sys.stderr, "fileno", lambda: 2)
+    monkeypatch.setattr(os, "close", mock_close)
+    monkeypatch.setattr(os, "dup2", mock_dup2)
+
+    with suppress_c_stderr():
+        pass
+
+    assert len(closed_fds) >= 2

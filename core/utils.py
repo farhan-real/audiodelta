@@ -8,6 +8,23 @@ import os
 import sys
 from typing import Generator, List, Optional, Tuple
 
+if os.name == "nt":
+    try:
+        import ctypes
+        import msvcrt as _msvcrt
+
+        _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Windows STD_ERROR_HANDLE is (DWORD)-12 = 0xFFFFFFF4
+        _STD_ERROR_HANDLE = 0xFFFFFFF4
+    except Exception:
+        _kernel32 = None
+        _msvcrt = None
+        _STD_ERROR_HANDLE = None
+else:
+    _kernel32 = None
+    _msvcrt = None
+    _STD_ERROR_HANDLE = None
+
 
 class Colors:
     """Standard ANSI color and style escape sequences."""
@@ -97,34 +114,114 @@ def c_pct(val: float, enabled: bool = True) -> str:
 def suppress_c_stderr() -> Generator[None, None, None]:
     """
     Context manager that temporarily suppresses low-level C library stderr output
-    (such as libmpg123 / libsndfile ID3 parser messages) by redirecting file descriptor 2 to devnull.
-    Guarantees a single yield and proper exception propagation out of the caller block.
+    (such as libmpg123 / libsndfile ID3 parser messages).
+
+    Targeting descriptor 2 directly ensures C-level stderr is suppressed even if
+    Python's sys.stderr has been wrapped or replaced with an in-memory stream.
+    On Windows, it also synchronizes the Win32 STD_ERROR_HANDLE so that C runtime
+    DLLs (libmpg123) built with MSVC/vcpkg redirect cleanly to devnull.
     """
+    target_fd = 2
+    if sys.stderr is not None:
+        try:
+            target_fd = sys.stderr.fileno()
+        except Exception:
+            target_fd = 2
+
+    # Flush Python stderr buffer before redirecting OS descriptor
+    if sys.stderr is not None:
+        try:
+            sys.stderr.flush()
+        except Exception:
+            pass
+
+    saved_fd = -1
+    null_fd = -1
     redirected = False
-    saved_stderr_fd = -1
-    stderr_fileno = -1
+    old_win_handle = None
 
     try:
-        stderr_fileno = sys.stderr.fileno()
-        saved_stderr_fd = os.dup(stderr_fileno)
+        saved_fd = os.dup(target_fd)
         null_fd = os.open(os.devnull, os.O_WRONLY)
-        sys.stderr.flush()
-        os.dup2(null_fd, stderr_fileno)
-        os.close(null_fd)
+
+        # On Windows, save the active Win32 standard handle
+        if os.name == "nt" and _kernel32 is not None and _msvcrt is not None:
+            try:
+                old_win_handle = _kernel32.GetStdHandle(_STD_ERROR_HANDLE)
+            except Exception:
+                old_win_handle = None
+
+        os.dup2(null_fd, target_fd)
         redirected = True
+
+        # On Windows, repoint the Win32 standard handle to the new devnull descriptor
+        if os.name == "nt" and _kernel32 is not None and _msvcrt is not None and old_win_handle is not None:
+            try:
+                devnull_win_handle = _msvcrt.get_osfhandle(target_fd)
+                _kernel32.SetStdHandle(_STD_ERROR_HANDLE, devnull_win_handle)
+            except Exception:
+                pass
+
     except Exception:
-        redirected = False
+        if redirected:
+            try:
+                os.dup2(saved_fd, target_fd)
+            except Exception:
+                pass
+            redirected = False
+
+        if old_win_handle is not None and os.name == "nt" and _kernel32 is not None:
+            try:
+                _kernel32.SetStdHandle(_STD_ERROR_HANDLE, old_win_handle)
+            except Exception:
+                pass
+            old_win_handle = None
+
+    finally:
+        # null_fd is no longer needed once dup2 has replaced target_fd (or if setup failed)
+        if null_fd != -1:
+            try:
+                os.close(null_fd)
+            except Exception:
+                pass
+            null_fd = -1
+
+        # If redirection failed, close saved_fd immediately so nothing leaks
+        if not redirected and saved_fd != -1:
+            try:
+                os.close(saved_fd)
+            except Exception:
+                pass
+            saved_fd = -1
 
     try:
         yield
     finally:
-        if redirected:
+        # Step 3: Tear down and restore original state
+        if sys.stderr is not None:
             try:
                 sys.stderr.flush()
-                os.dup2(saved_stderr_fd, stderr_fileno)
-                os.close(saved_stderr_fd)
             except Exception:
                 pass
+
+        if old_win_handle is not None and os.name == "nt" and _kernel32 is not None:
+            try:
+                _kernel32.SetStdHandle(_STD_ERROR_HANDLE, old_win_handle)
+            except Exception:
+                pass
+
+        if redirected:
+            try:
+                os.dup2(saved_fd, target_fd)
+            except Exception:
+                pass
+
+        if saved_fd != -1:
+            try:
+                os.close(saved_fd)
+            except Exception:
+                pass
+            saved_fd = -1
 
 
 class ProgressBar:
