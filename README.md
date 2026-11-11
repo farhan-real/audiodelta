@@ -41,36 +41,60 @@
 ## Installation & Virtual Environment Setup
 
 ### 1. Prerequisites
-- Python 3.8 or higher installed on your system
-- `libsndfile` installed (standard on macOS and modern Linux distributions; bundled with wheels on Windows)
+- **Python:** Python 3.8 is required.
+- **System Audio Library (`libsndfile`):** Required by `soundfile` to encode and decode audio.
+  - **macOS (Homebrew):** `brew install libsndfile`
+  - **Ubuntu / Debian:** `sudo apt update && sudo apt install -y libsndfile1`
+  - **Windows:** Bundled automatically with binary wheels.
 
-### 2. Create and Activate Virtual Environment (`venv`)
+---
 
-Isolate your installation by creating and activating a local virtual environment:
+### 2. Create the Virtual Environment
 
-#### On macOS and Linux:
+Create an isolated virtual environment targeting Python 3.8:
+
+- **macOS & Linux:**
+  ```bash
+  python3.8 -m venv venv
+  ```
+  *(If running on a minimal Linux distribution where `ensurepip` is absent, install virtualenv and run `virtualenv -p python3.8 venv`)*
+
+- **Windows (Python Launcher):**
+  ```cmd
+  py -3.8 -m venv venv
+  ```
+
+---
+
+### 3. Activate the Environment
+
+- **macOS & Linux (bash / zsh):**
+  ```bash
+  source venv/bin/activate
+  ```
+
+- **macOS & Linux (fish):**
+  ```fish
+  source venv/bin/activate.fish
+  ```
+
+- **Windows (Command Prompt):**
+  ```cmd
+  venv\Scripts\activate.bat
+  ```
+
+- **Windows (PowerShell):**
+  ```powershell
+  venv\Scripts\Activate.ps1
+  ```
+
+---
+
+### 4. Install Dependencies
+
+Once the environment is active (indicated by `(venv)` in your terminal prompt), upgrade packaging tools to ensure binary wheels download correctly, then install the project dependencies:
+
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-#### On Windows (Command Prompt):
-```cmd
-python -m venv venv
-venv\Scripts\activate.bat
-```
-
-#### On Windows (PowerShell):
-```powershell
-python -m venv venv
-venv\Scripts\Activate.ps1
-```
-
-### 3. Install Dependencies
-With the virtual environment active, install the required packages:
-
-```bash
-pip install --upgrade pip
 pip install numpy scipy librosa soundfile pyloudnorm pytest
 ```
 
