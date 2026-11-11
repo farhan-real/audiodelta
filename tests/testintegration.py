@@ -62,7 +62,6 @@ def test_cli_execution_flags_and_html_generation(capsys):
         create_synthetic_wav(wav_a, duration=3.5, freq=300.0)
         create_synthetic_wav(wav_b, duration=3.5, freq=300.0)
 
-        # Run with --html report export
         code = run([
             str(wav_a),
             str(wav_b),

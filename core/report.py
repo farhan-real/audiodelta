@@ -4,7 +4,7 @@ ANSI terminal coloring, and interactive clickable HTML report generation.
 """
 
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 import webbrowser
 
 from core.coverage import compute_verified_coverage
@@ -241,8 +241,6 @@ def print_snippet_report(
     print(colorize(header_shared, Colors.BOLD_CYAN, use_color))
     print(rule)
 
-    total_matches = len(matches)
-
     if not matches:
         print("  No shared musical snippets detected above threshold.")
     else:
@@ -319,8 +317,8 @@ def generate_html_report(
     auto_open: bool = False
 ) -> None:
     """
-    Generates an interactive, standalone HTML comparison report with native
-    clickable <details><summary> accordions to expand and collapse shared sections.
+    Generates an interactive HTML comparison report with native clickable
+    <details><summary> accordions to expand and collapse shared sections.
     """
     sec_a, sec_b, pct_a, pct_b, gaps_a, gaps_b = compute_verified_coverage(a.duration, b.duration, matches)
 
@@ -346,7 +344,6 @@ def generate_html_report(
         "    .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 0.85em; }",
         "    .badge-green { background: #065f46; color: #34d399; }",
         "    .badge-yellow { background: #854d0e; color: #fde047; }",
-        "    .badge-blue { background: #0369a1; color: #7dd3fc; }",
         "    ul { margin: 8px 0; padding-left: 20px; }",
         "    li { margin-bottom: 4px; }",
         "  </style>",
@@ -377,8 +374,8 @@ def generate_html_report(
         "    </div>",
         "    <details open>",
         "      <summary>Arrangement Overview (Click to collapse/expand)</summary>",
-        f"      <p style='margin-top:12px'><strong>Song A in Song B:</strong> {sec_a:.1f} s ({pct_a:.1f}% shared)<br>",
-        f"      <strong>Song B in Song A:</strong> {sec_b:.1f} s ({pct_b:.1f}% shared)</p>",
+        f"      <p style='margin-top:12px'><strong>Song A in Song B:</strong> {sec_a:.1f} s ({pct_a:.1f}% of Song A)<br>",
+        f"      <strong>Song B in Song A:</strong> {sec_b:.1f} s ({pct_b:.1f}% of Song B)</p>",
     ]
 
     if gaps_a:

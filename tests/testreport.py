@@ -187,7 +187,6 @@ def test_generate_html_report_clickable_details():
 
         assert report_file.exists()
         content = report_file.read_text(encoding="utf-8")
-        # Confirms native clickable details and summary tags are generated
         assert "<details open>" in content
         assert "<summary>Arrangement Overview (Click to collapse/expand)</summary>" in content
         assert "<summary>Shared Sections (1 detected &bull; Click to collapse/expand)</summary>" in content

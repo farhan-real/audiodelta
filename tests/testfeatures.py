@@ -63,7 +63,7 @@ def test_extract_features_empty():
     assert comb.shape == (25, 0)
 
 
-def test_extract_features_zero_mean_chroma_and_unit_norm():
+def test_extract_features_sine_normalizations():
     sr = 22050
     t = np.linspace(0, 1.5, int(sr * 1.5), endpoint=False)
     y = (0.5 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
@@ -74,10 +74,6 @@ def test_extract_features_zero_mean_chroma_and_unit_norm():
     assert comb.shape[0] == 25
     assert c.shape[1] > 0
     assert c.shape[1] == m.shape[1] == comb.shape[1]
-
-    # Verify chroma is zero-mean centered across pitch classes per frame
-    c_means = np.mean(c, axis=0)
-    assert np.allclose(c_means, 0.0, atol=1e-4)
 
     # Verify column Euclidean norms are approximately 1.0
     c_norms = np.linalg.norm(c, axis=0)

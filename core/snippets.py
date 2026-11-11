@@ -1,5 +1,5 @@
 """
-Cross-correlation, slope-aware matched snippet detection, and contiguous consolidation.
+Cross-correlation, slope-aware snippet detection, and competitive non-maximum suppression.
 """
 
 import math
@@ -31,11 +31,11 @@ def resample_feature_matrix(features: np.ndarray, ratio: float) -> np.ndarray:
 
 def consolidate_snippets(
     snippets: List[MatchedSnippet],
-    tolerance: float = 1.0
+    tolerance: float = 1.5
 ) -> List[MatchedSnippet]:
     """
     Consolidates contiguous or adjacent snippet fragments into unified arrangement blocks.
-    Significantly reduces clutter when songs share large continuous sections.
+    Merges segments that share timing continuity in both Song A and Song B.
     """
     if not snippets or len(snippets) <= 1:
         return snippets
@@ -49,10 +49,10 @@ def consolidate_snippets(
         b_gap = current.b_start - prev.b_end
         ratio_diff = abs(current.speed_ratio - prev.speed_ratio)
 
-        # Merge if consecutive in both tracks with identical tempo ratio and near-zero gap
-        if abs(a_gap) <= tolerance and abs(b_gap) <= tolerance and ratio_diff < 0.01:
-            total_dur_a = (current.a_end - prev.a_start)
-            total_dur_b = (current.b_end - prev.b_start)
+        # Merge if consecutive in both tracks with continuous offset and near-zero gap
+        if abs(a_gap) <= tolerance and abs(b_gap) <= tolerance and ratio_diff < 0.02:
+            total_dur_a = max(current.a_end, prev.a_end) - prev.a_start
+            total_dur_b = max(current.b_end, prev.b_end) - prev.b_start
 
             w_prev = max(EPS, prev.duration_a)
             w_curr = max(EPS, current.duration_a)
@@ -64,9 +64,9 @@ def consolidate_snippets(
 
             merged[-1] = MatchedSnippet(
                 a_start=prev.a_start,
-                a_end=current.a_end,
+                a_end=max(current.a_end, prev.a_end),
                 b_start=prev.b_start,
-                b_end=current.b_end,
+                b_end=max(current.b_end, prev.b_end),
                 duration_a=total_dur_a,
                 duration_b=total_dur_b,
                 speed_ratio=prev.speed_ratio,
@@ -90,7 +90,7 @@ def find_snippets(
 ) -> List[MatchedSnippet]:
     """
     Finds matching shared musical snippets between two analyzed tracks with cross-correlation progress.
-    Applies competitive cross-diagonal suppression to eliminate false positive chord cross-talk.
+    Uses competitive non-maximum suppression to eliminate spurious 3-5s chord repetitions.
     """
     if a.combined_features.size == 0 or b.combined_features.size == 0:
         return []
@@ -178,32 +178,31 @@ def find_snippets(
                             harm_score = score
                             timb_score = score
 
-                        # Both harmonic and timbral similarities must exceed base consistency gates
-                        # Prevents different songs with similar EQ but different notes from matching
-                        if harm_score >= 0.50 and timb_score >= 0.40:
-                            candidates.append(MatchedSnippet(
-                                a_start=a_start,
-                                a_end=a_end,
-                                b_start=b_start,
-                                b_end=b_end,
-                                duration_a=dur_a,
-                                duration_b=dur_b,
-                                speed_ratio=speed_ratio,
-                                composite_similarity=score,
-                                harmonic_similarity=float(np.clip(harm_score, 0.0, 1.0)),
-                                timbral_similarity=float(np.clip(timb_score, 0.0, 1.0))
-                            ))
+                        candidates.append(MatchedSnippet(
+                            a_start=a_start,
+                            a_end=a_end,
+                            b_start=b_start,
+                            b_end=b_end,
+                            duration_a=dur_a,
+                            duration_b=dur_b,
+                            speed_ratio=speed_ratio,
+                            composite_similarity=score,
+                            harmonic_similarity=float(np.clip(harm_score, 0.0, 1.0)),
+                            timbral_similarity=float(np.clip(timb_score, 0.0, 1.0))
+                        ))
 
     if bar is not None:
         bar.finish()
 
-    # Sort candidates by structural significance: score * sqrt(duration)
-    candidates.sort(key=lambda x: (x.composite_similarity * math.sqrt(x.duration_a)), reverse=True)
+    # Sort candidates by structural significance: score * duration
+    candidates.sort(key=lambda x: (x.composite_similarity * x.duration_a), reverse=True)
     filtered: List[MatchedSnippet] = []
 
-    # Competitive non-maximum suppression:
-    # Discards spurious matches where the same 3-second slice in Track A matches dozens
-    # of unrelated timestamps across Track B due to repetitive chord structures.
+    # Competitive Non-Maximum Suppression:
+    # A single chord progression appearing repeatedly across a track will create hundreds of short
+    # 3-5s diagonal crossings. If an interval in Song A or Song B is already covered by a dominant
+    # continuous arrangement match, suppress short redundant shadow matches unless they represent
+    # a verified, extended repeated section (duration >= 8.0s and similarity >= 0.88).
     for cand in candidates:
         suppress = False
         cand_c = cand.b_start - cand.speed_ratio * cand.a_start
@@ -213,28 +212,34 @@ def find_snippets(
             ov_a = max(0.0, min(cand.a_end, kept.a_end) - max(cand.a_start, kept.a_start))
             ov_b = max(0.0, min(cand.b_end, kept.b_end) - max(cand.b_start, kept.b_start))
 
-            # Case 1: Same or adjacent diagonal offset
-            if abs(cand_c - kept_c) <= max(2 * hop_sec, 0.35):
-                if ov_a / (min(cand.duration_a, kept.duration_a) + EPS) > 0.40:
+            # Case 1: Same or near-identical diagonal alignment offset
+            if abs(cand_c - kept_c) <= max(2 * hop_sec, 0.40):
+                if ov_a / (min(cand.duration_a, kept.duration_a) + EPS) > 0.35:
                     suppress = True
                     break
             else:
-                # Case 2: Different diagonal. Track A overlap is high, but Track B points elsewhere.
-                # A musical snippet cannot appear at 50 random places simultaneously unless it's a genuine
-                # identical sample hook with very high confidence (>= 0.88).
-                ratio_a = ov_a / (cand.duration_a + EPS)
-                if ratio_a > 0.50 and cand.composite_similarity < 0.88:
-                    suppress = True
-                    break
+                # Case 2: Different diagonal. Track A's interval is substantially covered by a longer match.
+                # Suppress short chord cross-talk matches unless it is an extended distinct hook.
+                frac_a = ov_a / (cand.duration_a + EPS)
+                frac_b = ov_b / (cand.duration_b + EPS)
 
-                # Case 3: Both tracks substantially covered
-                if (ov_a / (cand.duration_a + EPS) > 0.75) and (ov_b / (cand.duration_b + EPS) > 0.75):
+                if frac_a > 0.50:
+                    if cand.duration_a < 8.0 or cand.composite_similarity < 0.88:
+                        suppress = True
+                        break
+
+                if frac_b > 0.50:
+                    if cand.duration_b < 8.0 or cand.composite_similarity < 0.88:
+                        suppress = True
+                        break
+
+                if (frac_a > 0.70) and (frac_b > 0.70):
                     suppress = True
                     break
 
         if not suppress:
             filtered.append(cand)
 
-    consolidated = consolidate_snippets(filtered, tolerance=1.0)
+    consolidated = consolidate_snippets(filtered, tolerance=1.5)
     consolidated.sort(key=lambda x: x.a_start)
     return consolidated
