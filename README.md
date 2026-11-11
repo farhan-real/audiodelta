@@ -19,9 +19,9 @@
 - **Mid/Side Energy Ratio:** Evaluates stereo image width changes via logarithmic side-to-mid energy quotients.
 - **Phase-Protected Mono Downmix:** Automatically detects destructive mono cancellation ($E_{\text{mid}} < 0.01 \cdot E_{\text{left}}$) and falls back to isolated single-channel routing for feature analysis.
 
-### 3. Dual-Domain Feature Extraction (Zero Spurious Matches)
-- **Zero-Mean Centered Chroma:** Mean-centers 12-bin Constant-Q Chromagrams across pitch classes per frame before normalization. This removes the non-negative baseline bias that causes generic chord progressions to produce false-positive matches between different songs.
-- **Timbral Separation (CMVN MFCC):** Normalizes 13 Mel-Frequency Cepstral Coefficients across time to ensure timbre comparisons remain invariant to static EQ balance shifts.
+### 3. Dual-Domain Feature Extraction
+- **Harmonic & Timbral Separation:** Extracts harmonic pitch content via 12-bin Constant-Q Chromagrams (`C1` to `B7`) and timbral envelope textures via 13 Mel-Frequency Cepstral Coefficients (MFCCs).
+- **Cepstral Mean and Variance Normalization (CMVN):** Normalizes MFCCs across time to ensure timbre comparisons remain invariant to static EQ balance shifts.
 - **Independent L2-Normalization & Weighting:** Combines normalized harmonic ($70\%$) and timbral ($30\%$) vectors into a 25-dimensional unit-norm descriptor per analysis frame.
 
 ### 4. Speed-Ratio Aware Snippet Discovery & Consolidation
@@ -40,7 +40,7 @@
 - **ANSI Terminal Colors:** Full color-coded output with automatic TTY and `NO_COLOR` environment detection.
 
 ### 7. Real-Time Terminal Progress Feedback
-- Step-by-step progress tracking across the 6-stage audio analysis pipeline.
+- Step-by-step progress tracking across the 6-stage audio analysis pipeline for both reference and target tracks.
 - Real-time progress bar for chunked ITU-R BS.1770-4 true-peak oversampling.
 - Progress bar for diagonal cross-correlation matrix scanning.
 
@@ -154,6 +154,12 @@ audiodelta analyzing tracks [precise mode]...
   [4/6] track_mix_v1.wav: Measuring integrated LUFS and loudness range...
   [5/6] track_mix_v1.wav: Resampling and extracting harmonic/timbral features...
   [6/6] track_mix_v1.wav: Evaluating musical key and 4-band spectral distribution...
+  [1/6] track_master_v1.wav: Loading and decoding audio stream...
+  [2/6] track_master_v1.wav: Auditing stereo correlation and phase stability...
+  [3/6] track_master_v1.wav: Calculating ITU-R BS.1770-4 polyphase true peak...
+  [4/6] track_master_v1.wav: Measuring integrated LUFS and loudness range...
+  [5/6] track_master_v1.wav: Resampling and extracting harmonic/timbral features...
+  [6/6] track_master_v1.wav: Evaluating musical key and 4-band spectral distribution...
 
 [SONG A] track_mix_v1.wav
   Duration:         03:30.00 (210.00 s)
@@ -232,6 +238,18 @@ python main.py original.wav radio_edit.wav --mode simple
 #### Example Output (`simple` mode):
 ```text
 audiodelta analyzing tracks [simple mode]...
+  [1/6] original.wav: Loading and decoding audio stream...
+  [2/6] original.wav: Auditing stereo correlation and phase stability...
+  [3/6] original.wav: Calculating ITU-R BS.1770-4 polyphase true peak...
+  [4/6] original.wav: Measuring integrated LUFS and loudness range...
+  [5/6] original.wav: Resampling and extracting harmonic/timbral features...
+  [6/6] original.wav: Evaluating musical key and 4-band spectral distribution...
+  [1/6] radio_edit.wav: Loading and decoding audio stream...
+  [2/6] radio_edit.wav: Auditing stereo correlation and phase stability...
+  [3/6] radio_edit.wav: Calculating ITU-R BS.1770-4 polyphase true peak...
+  [4/6] radio_edit.wav: Measuring integrated LUFS and loudness range...
+  [5/6] radio_edit.wav: Resampling and extracting harmonic/timbral features...
+  [6/6] radio_edit.wav: Evaluating musical key and 4-band spectral distribution...
 
 [SONG A] original.wav
   Length:          05:12.00 (312.0s)
@@ -364,8 +382,8 @@ sec_a, sec_b, pct_a, pct_b, cuts_a, additions_b = compute_verified_coverage(
 )
 
 print(f"Song A in Song B: {sec_a:.1f}s ({pct_a:.1f}%)")
-print(f"Cuts unique to Song A: {cuts_a}")
-print(f"Additions unique to Song B: {additions_b}")
+print(f"Cuts unique to Track A: {cuts_a}")
+print(f"Additions unique to Track B: {additions_b}")
 
 # 4. Print console report or generate interactive HTML report
 print_full_report(track_a, track_b, snippets, mode="simple")
@@ -390,10 +408,10 @@ pytest -v
 
 ### Test Coverage Highlights
 - **`tests/testmodels.py`:** Dataclass structures, default types, and property initializations.
-- **`tests/testutils.py`:** Centisecond time formatting, interval subtraction arithmetic, `ProgressBar` TTY logic, ANSI `Colors` formatting, and `NO_COLOR` environment handling.
+- **`tests/testutils.py`:** Centisecond time formatting, interval subtraction arithmetic, `ProgressBar` TTY logic, ANSI `Colors` formatting, and C-level stderr suppression.
 - **`tests/testpeak.py`:** Polyphase 48-tap FIR interpolation validation, inter-sample true-peak overshoot detection ($> 0.0\text{ dBTP}$), high sample rate fallback ($> 96\text{ kHz}$), chunking loops, and progress callbacks.
 - **`tests/teststereo.py`:** Mono (1D and 2D arrays), perfect dual-mono ($+1.0$), complete anti-phase ($-1.0$), decorrelated orthogonal stereo ($0.0$), and phase cancellation fallback to single-channel routing.
-- **`tests/testfeatures.py`:** Key profile estimation across all 12 major and minor modes, Welch PSD spectral power distributions, MFCC CMVN zero-mean normalizations, and pitch-class mean-centered chroma verification.
+- **`tests/testfeatures.py`:** Key profile estimation across all 12 major and minor modes, Welch PSD spectral power distributions, and MFCC CMVN zero-mean normalizations.
 - **`tests/testsnippets.py`:** Feature matrix time-stretching, diagonal cross-correlation run extraction, offset alignment deduplication, tempo scaling ($0.5\times, 1.0\times, 2.0\times$), contiguous snippet consolidation, and verification that distinct unrelated songs yield zero false-positive matches.
 - **`tests/testcoverage.py`:** Bipartite non-overlapping allocation, interval subtraction verification, and structural edit discovery.
 - **`tests/testreport.py`:** Output verification confirming both simple and precise modes print all metrics, overhauled wording (`Song A in Song B`), and interactive HTML report generation with clickable `<details>` and `<summary>` tags.
