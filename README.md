@@ -342,7 +342,7 @@ The exported HTML file uses responsive CSS and native `<details><summary>` tags 
 
 ## Programmatic Python API
 
-You can import and use `audiodelta` directly within Python scripts or testing harnesses:
+You can import and use `audiodelta` directly within Python scripts, analysis pipelines, and test harnesses. See [API](API.md) for more details.
 
 ```python
 from pathlib import Path
