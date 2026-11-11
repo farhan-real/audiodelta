@@ -2,18 +2,23 @@
 Verified Sample Peak and True Peak calculation engine compliant with ITU-R BS.1770-4.
 """
 
-from typing import Tuple
+from typing import Callable, Optional, Tuple
 import numpy as np
 import scipy.signal
 
 from core.constants import BS1770_FILTER_48
 
 
-def compute_peak_and_true_peak(y: np.ndarray, sr: int) -> Tuple[float, float]:
+def compute_peak_and_true_peak(
+    y: np.ndarray,
+    sr: int,
+    progress_callback: Optional[Callable[[int, int], None]] = None
+) -> Tuple[float, float]:
     """
     Computes Sample Peak (dBFS linear) and True Peak (dBTP linear).
     Uses ITU-R BS.1770-4 48-tap 4x polyphase FIR filtering with exact group-delay
     alignment (tau = 23.5 samples at 4x rate). For sr > 96k, applies 2x oversampling.
+    Supports optional progress callbacks reporting (current_chunk, total_chunks).
     """
     if y.size == 0:
         return 0.0, 0.0
@@ -25,6 +30,9 @@ def compute_peak_and_true_peak(y: np.ndarray, sr: int) -> Tuple[float, float]:
     pad_len = 32
     n_samples = y_2d.shape[-1]
     true_peak = sample_peak
+
+    total_chunks = max(1, (n_samples + chunk_size - 1) // chunk_size)
+    chunk_index = 0
 
     if sr <= 96000:
         for start in range(0, n_samples, chunk_size):
@@ -42,13 +50,16 @@ def compute_peak_and_true_peak(y: np.ndarray, sr: int) -> Tuple[float, float]:
 
             y_up = scipy.signal.upfirdn(BS1770_FILTER_48, chunk, up=4, down=1, axis=-1)
 
-            # Account for 48-tap filter group delay: tau = (48 - 1) / 2 = 23.5 samples
             core_start = pad_len * 4 + 22
             core_end = core_start + (end - start) * 4
             core = y_up[:, core_start:core_end]
 
             if core.size > 0:
                 true_peak = max(true_peak, float(np.max(np.abs(core))))
+
+            chunk_index += 1
+            if progress_callback is not None:
+                progress_callback(chunk_index, total_chunks)
     else:
         for start in range(0, n_samples, chunk_size):
             end = min(start + chunk_size, n_samples)
@@ -70,5 +81,9 @@ def compute_peak_and_true_peak(y: np.ndarray, sr: int) -> Tuple[float, float]:
 
             if core.size > 0:
                 true_peak = max(true_peak, float(np.max(np.abs(core))))
+
+            chunk_index += 1
+            if progress_callback is not None:
+                progress_callback(chunk_index, total_chunks)
 
     return sample_peak, true_peak

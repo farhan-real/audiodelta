@@ -31,9 +31,9 @@ def test_full_analysis_and_reporting_pipeline_both_modes(capsys):
         create_synthetic_wav(wav_a, duration=4.0, freq=440.0)
         create_synthetic_wav(wav_b, duration=4.0, freq=440.0)
 
-        track_a = analyze_track(wav_a)
-        track_b = analyze_track(wav_b)
-        snippets = find_snippets(track_a, track_b, min_duration=2.0, sim_threshold=0.60)
+        track_a = analyze_track(wav_a, show_progress=False)
+        track_b = analyze_track(wav_b, show_progress=False)
+        snippets = find_snippets(track_a, track_b, min_duration=2.0, sim_threshold=0.60, show_progress=False)
 
         print_full_report(track_a, track_b, snippets, mode="precise")
         out_precise = capsys.readouterr().out
@@ -50,7 +50,7 @@ def test_full_analysis_and_reporting_pipeline_both_modes(capsys):
         assert "ARRANGEMENT CHANGES" in out_simple
 
 
-def test_cli_execution_simple_and_precise_modes(capsys):
+def test_cli_execution_progress_and_no_progress(capsys):
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         wav_a = tmp_path / "track1.wav"
@@ -59,17 +59,21 @@ def test_cli_execution_simple_and_precise_modes(capsys):
         create_synthetic_wav(wav_a, duration=3.5, freq=300.0)
         create_synthetic_wav(wav_b, duration=3.5, freq=300.0)
 
+        # Default runs with progress updates
         code_p = run([str(wav_a), str(wav_b), "--mode", "precise", "--min-len", "2.0"])
         assert code_p == 0
         out_p = capsys.readouterr().out
-        assert "audiodelta analyzing audio files [precise mode]..." in out_p
+        assert "audiodelta analyzing tracks [precise mode]..." in out_p
+        assert "[1/6]" in out_p
         assert "MIX AND MASTERING AUDIT" in out_p
 
-        code_s = run([str(wav_a), str(wav_b), "-m", "simple", "--min-len", "2.0"])
-        assert code_s == 0
-        out_s = capsys.readouterr().out
-        assert "audiodelta analyzing audio files [simple mode]..." in out_s
-        assert "MIX COMPARISON" in out_s
+        # Run with --no-progress
+        code_np = run([str(wav_a), str(wav_b), "-m", "simple", "--no-progress", "--min-len", "2.0"])
+        assert code_np == 0
+        out_np = capsys.readouterr().out
+        assert "audiodelta analyzing tracks" not in out_np
+        assert "[1/6]" not in out_np
+        assert "MIX COMPARISON" in out_np
 
 
 def test_cli_execution_invalid_arguments(capsys):
@@ -102,3 +106,4 @@ def test_parser_defaults():
     assert args.min_len == 3.0
     assert args.threshold == 0.72
     assert not args.no_tempo_rescale
+    assert not args.no_progress

@@ -75,9 +75,12 @@ def test_find_snippets_identical_tracks():
     t1 = build_mock_track(14.0, features, bpm=120.0)
     t2 = build_mock_track(14.0, features, bpm=120.0)
 
-    matches = find_snippets(t1, t2, min_duration=3.0, sim_threshold=0.72)
-    assert len(matches) >= 1
-    best_match = matches[0]
+    # Test with progress enabled and disabled
+    matches_prog = find_snippets(t1, t2, min_duration=3.0, sim_threshold=0.72, show_progress=True)
+    matches_quiet = find_snippets(t1, t2, min_duration=3.0, sim_threshold=0.72, show_progress=False)
+
+    assert len(matches_prog) == len(matches_quiet) >= 1
+    best_match = matches_prog[0]
     assert pytest.approx(best_match.composite_similarity, abs=0.05) == 1.0
     assert best_match.duration_a >= 10.0
     assert pytest.approx(best_match.speed_ratio, abs=1e-3) == 1.0
@@ -96,7 +99,7 @@ def test_find_snippets_shifted_offset():
     t1 = build_mock_track(100 * hop_sec, feat_a, bpm=120.0)
     t2 = build_mock_track(130 * hop_sec, feat_b, bpm=120.0)
 
-    matches = find_snippets(t1, t2, min_duration=3.0, sim_threshold=0.72)
+    matches = find_snippets(t1, t2, min_duration=3.0, sim_threshold=0.72, show_progress=False)
     assert len(matches) >= 1
     assert matches[0].b_start > matches[0].a_start
     assert pytest.approx(matches[0].b_start - matches[0].a_start, abs=0.3) == 30 * hop_sec

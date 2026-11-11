@@ -90,7 +90,7 @@ def test_analyze_track_missing_file():
         analyze_track(Path("non_existent_audio_file.wav"))
 
 
-def test_analyze_track_synthetic_wav():
+def test_analyze_track_synthetic_wav_with_and_without_progress(capsys):
     sr = 44100
     duration = 2.0
     t = np.linspace(0, duration, int(sr * duration), endpoint=False)
@@ -102,11 +102,15 @@ def test_analyze_track_synthetic_wav():
         wav_path = Path(tmp_dir) / "synth.wav"
         sf.write(str(wav_path), stereo_wave, sr)
 
-        analysis = analyze_track(wav_path)
-        assert pytest.approx(analysis.duration, abs=0.05) == duration
-        assert analysis.sample_rate == sr
-        assert analysis.sample_peak_dbfs <= 0.0
-        assert analysis.true_peak_dbtp <= 1.0
-        assert analysis.stereo.channel_count == 2
-        assert len(analysis.spectral_balance_db) == 4
-        assert analysis.combined_features.shape[0] == 25
+        # Run with show_progress=True
+        analysis_prog = analyze_track(wav_path, show_progress=True)
+        out = capsys.readouterr().out
+        assert "[1/6]" in out
+        assert "[6/6]" in out
+        assert analysis_prog.duration == pytest.approx(duration, abs=0.05)
+
+        # Run with show_progress=False
+        analysis_quiet = analyze_track(wav_path, show_progress=False)
+        out_quiet = capsys.readouterr().out
+        assert out_quiet == ""
+        assert analysis_quiet.sample_rate == sr

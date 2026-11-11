@@ -70,12 +70,20 @@ def test_compute_peak_stereo():
     assert tp >= sp - 1e-3
 
 
-def test_compute_peak_large_array_chunking():
+def test_compute_peak_large_array_chunking_with_callback():
     sr = 44100
     n = 280000
     y = np.zeros(n, dtype=np.float32)
     y[100] = 0.4
     y[270000] = 0.95
-    sp, tp = compute_peak_and_true_peak(y, sr)
+
+    calls = []
+
+    def callback(current, total):
+        calls.append((current, total))
+
+    sp, tp = compute_peak_and_true_peak(y, sr, progress_callback=callback)
     assert pytest.approx(sp, abs=1e-4) == 0.95
     assert tp >= 0.95
+    assert len(calls) >= 2
+    assert calls[-1][0] == calls[-1][1]

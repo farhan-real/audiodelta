@@ -4,6 +4,7 @@ Key estimation, 4-band spectral balance, MFCC/chroma extraction, and track analy
 
 import math
 from pathlib import Path
+import sys
 from typing import Dict, Tuple
 import librosa
 import numpy as np
@@ -21,6 +22,7 @@ from core.constants import (
 from core.models import TrackAnalysis
 from core.peak import compute_peak_and_true_peak
 from core.stereo import evaluate_stereo_field
+from core.utils import ProgressBar
 
 
 def estimate_key(chroma: np.ndarray) -> str:
@@ -143,26 +145,53 @@ def extract_features(y_mono: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.nda
     return chroma_norm.astype(np.float32), mfcc_norm.astype(np.float32), combined.astype(np.float32)
 
 
-def analyze_track(path: Path) -> TrackAnalysis:
-    """Analyzes a complete audio track given its file system path."""
+def analyze_track(path: Path, show_progress: bool = True) -> TrackAnalysis:
+    """
+    Analyzes a complete audio track given its file system path with real-time progress updates.
+    """
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
 
+    track_name = path.name
+
+    def notify_step(step_num: int, message: str) -> None:
+        if show_progress:
+            sys.stdout.write(f"  [{step_num}/6] {track_name}: {message}\n")
+            sys.stdout.flush()
+
+    notify_step(1, "Loading and decoding audio stream...")
     y_raw, sr = librosa.load(str(path), sr=None, mono=False)
     if y_raw.size == 0:
         raise ValueError(f"Empty audio file: {path}")
 
     duration = y_raw.shape[-1] / sr
+
+    notify_step(2, "Auditing stereo correlation and phase stability...")
     stereo_audit, y_analysis_mono = evaluate_stereo_field(y_raw, sr)
 
-    sample_peak_lin, true_peak_lin = compute_peak_and_true_peak(y_raw, sr)
+    notify_step(3, "Calculating ITU-R BS.1770-4 polyphase true peak...")
+    bar = ProgressBar(total=1, prefix=f"        Filtering", length=24) if show_progress else None
+
+    def peak_cb(current_chunk: int, total_chunks: int) -> None:
+        if bar is not None:
+            bar.total = total_chunks
+            bar.update(current_chunk, f"({current_chunk}/{total_chunks} chunks)")
+
+    sample_peak_lin, true_peak_lin = compute_peak_and_true_peak(
+        y_raw,
+        sr,
+        progress_callback=peak_cb
+    )
+    if bar is not None:
+        bar.finish()
+
     sample_peak_dbfs = 20 * math.log10(max(sample_peak_lin, EPS))
     true_peak_dbtp = 20 * math.log10(max(true_peak_lin, EPS))
 
     rms_linear = float(np.sqrt(np.mean(y_raw.astype(np.float64) ** 2)))
     crest_factor = 20 * math.log10(max(true_peak_lin / max(rms_linear, EPS), EPS))
 
-    # pyloudnorm channel configuration
+    notify_step(4, "Measuring integrated LUFS and loudness range...")
     if y_raw.ndim == 2:
         channels_to_use = min(y_raw.shape[0], 5)
         audio_for_ln = np.ascontiguousarray(y_raw[:channels_to_use].T, dtype=np.float64)
@@ -187,6 +216,7 @@ def analyze_track(path: Path) -> TrackAnalysis:
     except Exception:
         pass
 
+    notify_step(5, "Resampling and extracting harmonic/timbral features...")
     if sr == ANALYSIS_SR:
         y_resamp = np.ascontiguousarray(y_analysis_mono, dtype=np.float32)
     else:
@@ -205,6 +235,8 @@ def analyze_track(path: Path) -> TrackAnalysis:
         bpm = 0.0
 
     chroma_features, timbral_features, combined_features = extract_features(y_resamp)
+
+    notify_step(6, "Evaluating musical key and 4-band spectral distribution...")
     key_est = estimate_key(chroma_features)
     spectral_balance = compute_spectral_balance(y_raw, sr)
 

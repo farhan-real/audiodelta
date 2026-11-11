@@ -1,8 +1,51 @@
 """
-Utility functions for time formatting and 1D interval subtraction arithmetic.
+Utility functions for time formatting, interval subtraction, and terminal progress bars.
 """
 
+import sys
 from typing import List, Tuple
+
+
+class ProgressBar:
+    """
+    Lightweight, dependency-free terminal progress bar with TTY auto-detection.
+    """
+
+    def __init__(
+        self,
+        total: int,
+        prefix: str = "",
+        length: int = 26,
+        file=sys.stdout
+    ) -> None:
+        self.total = max(1, total)
+        self.prefix = prefix
+        self.length = length
+        self.file = file
+        self.is_tty = hasattr(file, "isatty") and file.isatty()
+
+    def update(self, current: int, suffix: str = "") -> None:
+        """Draws or refreshes the progress bar."""
+        if not self.is_tty:
+            return
+        current = min(self.total, max(0, current))
+        fraction = current / self.total
+        filled = int(round(self.length * fraction))
+        bar = "#" * filled + "-" * (self.length - filled)
+        pct = fraction * 100.0
+        line = f"\r{self.prefix} [{bar}] {pct:5.1f}% {suffix}"
+        self.file.write(line)
+        self.file.flush()
+
+    def finish(self, message: str = "") -> None:
+        """Clears the progress bar line or writes a completion message."""
+        if not self.is_tty:
+            return
+        padding = " " * (self.length + len(self.prefix) + 25)
+        self.file.write(f"\r{padding}\r")
+        if message:
+            self.file.write(f"{message}\n")
+        self.file.flush()
 
 
 def fmt_time(seconds: float) -> str:

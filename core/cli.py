@@ -29,11 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min-len", type=float, default=3.0, help="Minimum snippet length in seconds (default: 3.0)")
     parser.add_argument("--threshold", type=float, default=0.72, help="Similarity threshold 0.0-1.0 (default: 0.72)")
     parser.add_argument("--no-tempo-rescale", action="store_true", help="Disable automatic tempo ratio scaling for snippet matching")
+    parser.add_argument("--no-progress", action="store_true", help="Disable progress bars and status updates")
     return parser
 
 
 def run(argv: Optional[List[str]] = None) -> int:
-    """Executes the audiodelta CLI command pipeline."""
+    """Executes the audiodelta CLI command pipeline with progress reporting."""
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -44,17 +45,22 @@ def run(argv: Optional[List[str]] = None) -> int:
         sys.stderr.write("Execution error: --threshold must be between 0.0 and 1.0\n")
         return 1
 
+    show_progress = not args.no_progress
+
     try:
-        print(f"audiodelta analyzing audio files [{args.mode} mode]...")
-        track_a = analyze_track(args.song_a)
-        track_b = analyze_track(args.song_b)
+        if show_progress:
+            print(f"audiodelta analyzing tracks [{args.mode} mode]...")
+
+        track_a = analyze_track(args.song_a, show_progress=show_progress)
+        track_b = analyze_track(args.song_b, show_progress=show_progress)
 
         snippets = find_snippets(
             track_a,
             track_b,
             min_duration=args.min_len,
             sim_threshold=args.threshold,
-            auto_tempo_scale=(not args.no_tempo_rescale)
+            auto_tempo_scale=(not args.no_tempo_rescale),
+            show_progress=show_progress
         )
 
         print_full_report(track_a, track_b, snippets, mode=args.mode)

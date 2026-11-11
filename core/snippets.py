@@ -9,6 +9,7 @@ from scipy.ndimage import uniform_filter1d
 
 from core.constants import ANALYSIS_SR, EPS, HOP_LENGTH
 from core.models import MatchedSnippet, TrackAnalysis
+from core.utils import ProgressBar
 
 
 def resample_feature_matrix(features: np.ndarray, ratio: float) -> np.ndarray:
@@ -33,9 +34,12 @@ def find_snippets(
     b: TrackAnalysis,
     min_duration: float = 3.0,
     sim_threshold: float = 0.72,
-    auto_tempo_scale: bool = True
+    auto_tempo_scale: bool = True,
+    show_progress: bool = True
 ) -> List[MatchedSnippet]:
-    """Finds matching shared musical snippets between two analyzed tracks."""
+    """
+    Finds matching shared musical snippets between two analyzed tracks with cross-correlation progress.
+    """
     if a.combined_features.size == 0 or b.combined_features.size == 0:
         return []
 
@@ -57,8 +61,15 @@ def find_snippets(
     n_a, n_b = S.shape
 
     candidates: List[MatchedSnippet] = []
+    diag_indices = list(range(-(n_a - 1), n_b))
+    total_diags = len(diag_indices)
 
-    for d in range(-(n_a - 1), n_b):
+    bar = ProgressBar(total=total_diags, prefix="  Cross-correlating snippets", length=24) if show_progress else None
+
+    for idx, d in enumerate(diag_indices):
+        if bar is not None and (idx % 25 == 0 or idx == total_diags - 1):
+            bar.update(idx + 1)
+
         diag = np.diagonal(S, offset=d)
         if len(diag) < min_frames or np.max(diag) < sim_threshold:
             continue
@@ -127,6 +138,9 @@ def find_snippets(
                             harmonic_similarity=float(np.clip(harm_score, 0.0, 1.0)),
                             timbral_similarity=float(np.clip(timb_score, 0.0, 1.0))
                         ))
+
+    if bar is not None:
+        bar.finish()
 
     candidates.sort(key=lambda x: (x.composite_similarity * math.sqrt(x.duration_a)), reverse=True)
     filtered: List[MatchedSnippet] = []

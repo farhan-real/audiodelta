@@ -19,12 +19,13 @@ from core.report import (
 )
 from core.snippets import find_snippets, resample_feature_matrix
 from core.stereo import evaluate_stereo_field
-from core.utils import fmt_time, subtract_intervals
+from core.utils import ProgressBar, fmt_time, subtract_intervals
 
 __all__ = [
     "MatchedSnippet",
     "StereoAudit",
     "TrackAnalysis",
+    "ProgressBar",
     "fmt_time",
     "subtract_intervals",
     "compute_peak_and_true_peak",

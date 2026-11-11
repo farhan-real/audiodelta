@@ -1,8 +1,9 @@
 """
-Unit tests and edge cases for time formatting and 1D interval subtraction arithmetic.
+Unit tests and edge cases for time formatting, interval subtraction, and progress bars.
 """
 
-from core.utils import fmt_time, subtract_intervals
+import io
+from core.utils import ProgressBar, fmt_time, subtract_intervals
 
 
 def test_fmt_time_zero():
@@ -83,3 +84,31 @@ def test_subtract_intervals_discards_sub_threshold():
     candidate = (10.0, 20.0)
     claimed = [(10.0, 19.96)]
     assert subtract_intervals(candidate, claimed) == []
+
+
+def test_progress_bar_non_tty():
+    # In non-TTY environments (like StringIO without isatty=True), no output is emitted
+    stream = io.StringIO()
+    pb = ProgressBar(total=10, prefix="Test", length=20, file=stream)
+    pb.update(5)
+    pb.finish()
+    assert stream.getvalue() == ""
+
+
+def test_progress_bar_tty():
+    class MockTTYStream(io.StringIO):
+        def isatty(self):
+            return True
+
+    stream = MockTTYStream()
+    pb = ProgressBar(total=10, prefix="Processing", length=10, file=stream)
+    pb.update(5, suffix="working")
+    val = stream.getvalue()
+    assert "\rProcessing [" in val
+    assert "50.0%" in val
+    assert "working" in val
+
+    pb.update(10)
+    pb.finish(message="Done")
+    final_val = stream.getvalue()
+    assert "Done\n" in final_val
