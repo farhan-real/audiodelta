@@ -41,13 +41,15 @@ def test_full_analysis_and_reporting_pipeline_both_modes(capsys):
         assert "MIX AND MASTERING AUDIT" in out_precise
         assert "SHARED SNIPPETS AND SAMPLES" in out_precise
         assert "STRUCTURAL EDIT AUDIT" in out_precise
+        assert "Song A in Song B (shared duration):" in out_precise
 
         print_full_report(track_a, track_b, snippets, mode="simple", use_color=False)
         out_simple = capsys.readouterr().out
         assert "[SONG A] song_a.wav" in out_simple
         assert "MIX COMPARISON" in out_simple
         assert "SHARED SECTIONS" in out_simple
-        assert "ARRANGEMENT CHANGES" in out_simple
+        assert "ARRANGEMENT BREAKDOWN" in out_simple
+        assert "Song A in Song B:" in out_simple
 
 
 def test_cli_execution_flags(capsys):
@@ -59,20 +61,17 @@ def test_cli_execution_flags(capsys):
         create_synthetic_wav(wav_a, duration=3.5, freq=300.0)
         create_synthetic_wav(wav_b, duration=3.5, freq=300.0)
 
-        # 1. Test CLI with --no-color and --no-progress
         code = run([str(wav_a), str(wav_b), "--no-color", "--no-progress", "--min-len", "2.0"])
         assert code == 0
         out = capsys.readouterr().out
         assert "MIX AND MASTERING AUDIT" in out
         assert "\033[" not in out
 
-        # 2. Test CLI with --collapse-snippets
         code_c = run([str(wav_a), str(wav_b), "--collapse-snippets", "--no-progress", "--min-len", "2.0"])
         assert code_c == 0
         out_c = capsys.readouterr().out
         assert "[v] Snippet table collapsed" in out_c or "No shared musical snippets" in out_c
 
-        # 3. Test CLI with --all-snippets
         code_all = run([str(wav_a), str(wav_b), "--all-snippets", "--no-progress", "--min-len", "2.0"])
         assert code_all == 0
 

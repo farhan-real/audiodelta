@@ -1,6 +1,6 @@
 """
-Dual-mode console reporting for audiodelta supporting simple/precise wording,
-ANSI terminal coloring, and collapsible shared section views.
+Dual-mode console reporting for audiodelta supporting intuitive simple wording,
+rigorous precise audio engineering specs, ANSI colors, and collapsible section views.
 """
 
 from typing import List
@@ -26,7 +26,7 @@ def print_track_card(
 
     if mode == "simple":
         print(f"\n{tag} {colorize(t.path.name, Colors.BOLD_WHITE, use_color)}")
-        print(f"  Duration:        {fmt_time(t.duration)} ({t.duration:.2f} s)")
+        print(f"  Length:          {fmt_time(t.duration)} ({t.duration:.1f}s)")
         ch_desc = "Mono (1 channel)" if t.stereo.channel_count == 1 else f"Stereo ({t.stereo.channel_count} channels)"
         print(f"  Channels:        {ch_desc}")
         print(f"  Tempo:           {t.bpm:.1f} BPM")
@@ -35,22 +35,21 @@ def print_track_card(
         lra_str = f"{t.lra:.1f} LU" if t.lra is not None else "N/A"
         print(f"  Loudness:        {lufs_str}")
         print(f"  Dynamic Range:   {lra_str}")
-        print(f"  Peak Level:      {t.sample_peak_dbfs:.2f} dB")
-        print(f"  True Peak:       {t.true_peak_dbtp:.2f} dB")
-        print(f"  Punch:           {t.crest_factor_db:.2f} dB")
+        print(f"  Punch:           {t.crest_factor_db:.1f} dB crest")
+        print(f"  Peak Level:      {t.sample_peak_dbfs:.2f} dB (true peak: {t.true_peak_dbtp:.2f} dB)")
 
         st = t.stereo
-        print(f"  Stereo Width:    {st.global_correlation:+.2f} (Worst spot: {st.min_window_correlation:+.2f})")
-        inv_str = f"{st.pct_negative_windows:.1f}% inverted"
+        print(f"  Stereo Field:    {st.global_correlation:+.2f} correlation (worst dip: {st.min_window_correlation:+.2f})")
+        inv_str = f"{st.pct_negative_windows:.1f}% out-of-phase"
         if st.pct_negative_windows > 10.0:
             inv_str = colorize(inv_str, Colors.YELLOW, use_color)
-        print(f"  Phase Inversion: {inv_str}")
-        print(f"  Mono Drop:       {st.mono_loss_db:.2f} dB")
+        print(f"  Phase Health:    {inv_str}")
+        print(f"  Mono Drop:       {st.mono_loss_db:.2f} dB loss")
         ms_str = "Center only" if st.mid_side_ratio_db <= -90.0 else f"{st.mid_side_ratio_db:.1f} dB"
-        print(f"  Center vs Sides: {ms_str}")
+        print(f"  Side vs Center:  {ms_str}")
 
         if t.spectral_balance_db:
-            print("  Frequencies:")
+            print("  Frequency Energy:")
             band_map = {
                 "Sub/Bass (20-250 Hz)": "Bass (20-250 Hz)",
                 "Low-Mid (250-1000 Hz)": "Lows (250-1000 Hz)",
@@ -109,36 +108,36 @@ def print_mix_deltas(
                 direction = colorize("Quieter", Colors.YELLOW, use_color)
             else:
                 direction = "Matched"
-            print(f"  Loudness:         {delta_lufs:+.1f} LU ({direction})")
+            print(f"  Loudness:        {delta_lufs:+.1f} LU ({direction})")
         else:
-            print("  Loudness:         N/A")
+            print("  Loudness:        N/A")
 
         if a.lra is not None and b.lra is not None:
             delta_lra = b.lra - a.lra
             spread = "More dynamic" if delta_lra > 0.5 else "Tighter" if delta_lra < -0.5 else "Consistent"
-            print(f"  Dynamic Range:    {delta_lra:+.1f} LU ({spread})")
+            print(f"  Dynamic Range:   {delta_lra:+.1f} LU ({spread})")
 
         delta_crest = b.crest_factor_db - a.crest_factor_db
         crest_tag = "Punchier" if delta_crest > 0.5 else "More compressed" if delta_crest < -0.5 else "Preserved"
-        print(f"  Punch:            {delta_crest:+.1f} dB ({crest_tag})")
+        print(f"  Punch:           {delta_crest:+.1f} dB ({crest_tag})")
 
         delta_sample = b.sample_peak_dbfs - a.sample_peak_dbfs
         delta_true = b.true_peak_dbtp - a.true_peak_dbtp
-        print(f"  Peak Level:       {delta_sample:+.2f} dB ({b.sample_peak_dbfs:.2f} dB)")
-        print(f"  True Peak:        {delta_true:+.2f} dB ({b.true_peak_dbtp:.2f} dB)")
+        print(f"  Peak Level:      {delta_sample:+.2f} dB ({b.sample_peak_dbfs:.2f} dB sample peak)")
+        print(f"  True Peak:       {delta_true:+.2f} dB ({b.true_peak_dbtp:.2f} dB inter-sample)")
 
         st_b = b.stereo
-        print(f"  Stereo Width:     {st_b.global_correlation:+.2f} ({st_b.min_window_correlation:+.2f} worst)")
-        print(f"  Phase Inversion:  {st_b.pct_negative_windows:.1f}% inverted")
-        print(f"  Mono Drop:        {st_b.mono_loss_db:.2f} dB")
+        print(f"  Stereo Field:    {st_b.global_correlation:+.2f} correlation ({st_b.min_window_correlation:+.2f} worst)")
+        print(f"  Phase Health:    {st_b.pct_negative_windows:.1f}% out-of-phase")
+        print(f"  Mono Drop:       {st_b.mono_loss_db:.2f} dB in mono")
 
         if a.stereo.mid_side_ratio_db > -90.0 and st_b.mid_side_ratio_db > -90.0:
             delta_ms = st_b.mid_side_ratio_db - a.stereo.mid_side_ratio_db
             w_dir = "Wider" if delta_ms > 0.5 else "Narrower" if delta_ms < -0.5 else "Unchanged"
-            print(f"  Width Change:     {delta_ms:+.1f} dB ({w_dir})")
+            print(f"  Stereo Image:    {delta_ms:+.1f} dB side energy ({w_dir})")
 
         if a.spectral_balance_db and b.spectral_balance_db:
-            print("  Frequency Changes:")
+            print("  Frequency Shifts:")
             band_map = {
                 "Sub/Bass (20-250 Hz)": "Bass",
                 "Low-Mid (250-1000 Hz)": "Lows",
@@ -149,9 +148,9 @@ def print_mix_deltas(
                 if band_name in b.spectral_balance_db:
                     delta_p = b.spectral_balance_db[band_name] - a.spectral_balance_db[band_name]
                     if delta_p > 0.5:
-                        status = colorize("More", Colors.GREEN, use_color)
+                        status = colorize("Boosted", Colors.GREEN, use_color)
                     elif delta_p < -0.5:
-                        status = colorize("Less", Colors.YELLOW, use_color)
+                        status = colorize("Cut", Colors.YELLOW, use_color)
                     else:
                         status = "Same"
                     short_name = band_map.get(band_name, band_name)
@@ -234,7 +233,7 @@ def print_snippet_report(
     collapse_snippets: bool = False
 ) -> None:
     """
-    Prints snippet match list and bipartite interval edit audit with collapsible display.
+    Prints snippet match list and arrangement breakdown with collapsible display.
     """
     rule = colorize("=" * 65, Colors.CYAN, use_color)
     subrule = colorize("-" * 65, Colors.CYAN, use_color)
@@ -270,7 +269,6 @@ def print_snippet_report(
             loc_b = f"{fmt_time(m.b_start)}-{fmt_time(m.b_end)}"
             dur = f"{m.duration_a:.1f} s"
 
-            # Color-code strong matches
             comp_val = m.composite_similarity * 100
             comp_str = f"{comp_val:.1f}%"
             if comp_val >= 90.0:
@@ -294,26 +292,44 @@ def print_snippet_report(
 
     sec_a, sec_b, pct_a, pct_b, gaps_a, gaps_b = compute_verified_coverage(a.duration, b.duration, matches)
 
-    header_audit = "ARRANGEMENT CHANGES" if mode == "simple" else "STRUCTURAL EDIT AUDIT (Verified Bipartite Allocation)"
-    print(f"\n{subrule}")
-    print(colorize(header_audit, Colors.BOLD_CYAN, use_color))
-    print(subrule)
-    print(f"  Song A shared:    {sec_a:.1f} s ({pct_a:.1f}%)")
-    print(f"  Song B shared:    {sec_b:.1f} s ({pct_b:.1f}%)")
+    if mode == "simple":
+        header_audit = "ARRANGEMENT BREAKDOWN"
+        print(f"\n{subrule}")
+        print(colorize(header_audit, Colors.BOLD_CYAN, use_color))
+        print(subrule)
+        print(f"  Song A in Song B:  {sec_a:.1f} s ({pct_a:.1f}% of Song A)")
+        print(f"  Song B in Song A:  {sec_b:.1f} s ({pct_b:.1f}% of Song B)")
 
-    if gaps_a and (not matches or pct_a < 99.0):
-        cut_label = "Removed from Song A:" if mode == "simple" else "[CUT] Unique to Song A (Cut or missing in Song B):"
-        cut_label_colored = colorize(f"\n  {cut_label}", Colors.YELLOW, use_color)
-        print(cut_label_colored)
-        for s, e in gaps_a:
-            print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
+        if gaps_a and (not matches or pct_a < 99.0):
+            cut_label = "Cut from Song A (missing in Song B):"
+            print(colorize(f"\n  {cut_label}", Colors.YELLOW, use_color))
+            for s, e in gaps_a:
+                print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
 
-    if gaps_b and (not matches or pct_b < 99.0):
-        added_label = "Added to Song B:" if mode == "simple" else "[ADDED] Unique to Song B (New intro/outro, extended cuts, or distinct material):"
-        added_label_colored = colorize(f"\n  {added_label}", Colors.GREEN, use_color)
-        print(added_label_colored)
-        for s, e in gaps_b:
-            print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
+        if gaps_b and (not matches or pct_b < 99.0):
+            added_label = "New in Song B (added / extended):"
+            print(colorize(f"\n  {added_label}", Colors.GREEN, use_color))
+            for s, e in gaps_b:
+                print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
+    else:
+        header_audit = "STRUCTURAL EDIT AUDIT (Verified Bipartite Allocation)"
+        print(f"\n{subrule}")
+        print(colorize(header_audit, Colors.BOLD_CYAN, use_color))
+        print(subrule)
+        print(f"  Song A in Song B (shared duration):  {sec_a:.1f} s ({pct_a:.1f}%)")
+        print(f"  Song B in Song A (shared duration):  {sec_b:.1f} s ({pct_b:.1f}%)")
+
+        if gaps_a and (not matches or pct_a < 99.0):
+            cut_label = "[CUT] Unique to Song A (absent in Song B):"
+            print(colorize(f"\n  {cut_label}", Colors.YELLOW, use_color))
+            for s, e in gaps_a:
+                print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
+
+        if gaps_b and (not matches or pct_b < 99.0):
+            added_label = "[ADDED] Unique to Song B (new / extended material):"
+            print(colorize(f"\n  {added_label}", Colors.GREEN, use_color))
+            for s, e in gaps_b:
+                print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
 
 
 def print_full_report(
