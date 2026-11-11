@@ -19,29 +19,37 @@
 - **Mid/Side Energy Ratio:** Evaluates stereo image width changes via logarithmic side-to-mid energy quotients.
 - **Phase-Protected Mono Downmix:** Automatically detects destructive mono cancellation ($E_{\text{mid}} < 0.01 \cdot E_{\text{left}}$) and falls back to isolated single-channel routing for feature analysis.
 
-### 3. Dual-Domain Feature Extraction
-- **Harmonic & Timbral Separation:** Extracts harmonic pitch content via 12-bin Constant-Q Chromagrams (`C1` to `B7`) and timbral envelope textures via 13 Mel-Frequency Cepstral Coefficients (MFCCs).
-- **Cepstral Mean and Variance Normalization (CMVN):** Normalizes MFCCs across time to ensure timbre comparisons remain invariant to static EQ balance shifts.
+### 3. Dual-Domain Feature Extraction (Zero Spurious Matches)
+- **Zero-Mean Centered Chroma:** Mean-centers 12-bin Constant-Q Chromagrams across pitch classes per frame before normalization. This removes the non-negative baseline bias that causes generic chord progressions to produce false-positive matches between different songs.
+- **Timbral Separation (CMVN MFCC):** Normalizes 13 Mel-Frequency Cepstral Coefficients across time to ensure timbre comparisons remain invariant to static EQ balance shifts.
 - **Independent L2-Normalization & Weighting:** Combines normalized harmonic ($70\%$) and timbral ($30\%$) vectors into a 25-dimensional unit-norm descriptor per analysis frame.
 
-### 4. Speed-Ratio Aware Snippet Discovery
+### 4. Speed-Ratio Aware Snippet Discovery & Consolidation
 - **Tempo-Preserving Cross-Correlation:** Uses estimated BPM ratios to apply temporal feature matrix resampling, matching identical musical phrases across speed variations (such as half-time or double-time edits).
-- **Slope-Aware Deduplication:** Merges redundant overlapping candidate runs along time-delay diagonals using alignment offsets ($c = t_B - r \cdot t_A$).
+- **Competitive Non-Maximum Suppression:** Discards secondary chord cross-talk where a brief chord in Song A matches multiple unrelated timestamps across Song B.
+- **Contiguous Arrangement Consolidation:** Automatically merges adjacent snippet fragments into cohesive arrangement blocks, transforming fragmented matches into continuous musical sections.
 
 ### 5. Verified Bipartite Interval Coverage Allocation
 - **Zero False Attribution Across Edits:** Analytic 1D interval subtraction isolates verified shared sections without bridging silent gaps or arrangement modifications.
 - **Arrangement Diffing:** Pinpoints cut material present only in Song A and newly added material present only in Song B (e.g. VIP intros, radio edit cuts, extended breakdowns).
 
-### 6. Dual Output Reporting Modes
-- **`precise` (Default):** Full engineering specifications, decibel notations (`dBFS`, `dBTP`), exact units (`LUFS`, `LU`), ITU-R standards, and mastering warnings (DAC clipping risks, streaming ceiling target overshoots, mono cancellation hazards).
-- **`simple`:** Direct, practical production terms showing all metrics concisely while strictly omitting educational paragraphs and alert texts.
+### 6. Dual Output Reporting & Interactive HTML Export
+- **`simple` Mode:** Natural, intuitive producer/musician terminology (`Song A in Song B`, `Cut from Song A`, `New in Song B`, `Punch`, `Stereo Field`) showing all audio metrics concisely without educational warning paragraphs.
+- **`precise` Mode (Default):** Complete audio engineering specifications, decibel notations (`dBFS`, `dBTP`), exact units (`LUFS`, `LU`), ITU-R BS.1770-4 standards, and mastering warnings (DAC clipping risks, streaming ceiling target overshoots, mono cancellation hazards).
+- **Interactive Clickable HTML Report:** Generates standalone HTML comparison reports featuring native `<details><summary>` accordions that can be clicked to expand and collapse shared sections and edit breakdowns.
+- **ANSI Terminal Colors:** Full color-coded output with automatic TTY and `NO_COLOR` environment detection.
+
+### 7. Real-Time Terminal Progress Feedback
+- Step-by-step progress tracking across the 6-stage audio analysis pipeline.
+- Real-time progress bar for chunked ITU-R BS.1770-4 true-peak oversampling.
+- Progress bar for diagonal cross-correlation matrix scanning.
 
 ---
 
 ## Installation & Virtual Environment Setup
 
 ### 1. Prerequisites
-- **Python:** Python 3.8 is required.
+- **Python:** Python 3.8 or higher is required.
 - **System Audio Library (`libsndfile`):** Required by `soundfile` to encode and decode audio.
   - **macOS (Homebrew):** `brew install libsndfile`
   - **Ubuntu / Debian:** `sudo apt update && sudo apt install -y libsndfile1`
@@ -92,9 +100,10 @@ Create an isolated virtual environment targeting Python 3.8:
 
 ### 4. Install Dependencies
 
-Once the environment is active (indicated by `(venv)` in your terminal prompt), upgrade packaging tools to ensure binary wheels download correctly, then install the project dependencies:
+Once the environment is active (indicated by `(venv)` in your terminal prompt), upgrade packaging tools to ensure binary wheels download correctly, then install project dependencies:
 
 ```bash
+pip install --upgrade pip setuptools wheel
 pip install numpy scipy librosa soundfile pyloudnorm pytest
 ```
 
@@ -119,6 +128,10 @@ python main.py <song_a> <song_b> [options]
 | `--min-len` | | `float` | `3.0` | Minimum matched snippet duration in seconds. |
 | `--threshold` | | `float` | `0.72` | Similarity threshold for frame alignment ($0.0\text{–}1.0$). |
 | `--no-tempo-rescale` | | `flag` | `False` | Disables automatic tempo-ratio scaling during matching. |
+| `--no-progress` | | `flag` | `False` | Disables progress bars and status updates. |
+| `--no-color` | | `flag` | `False` | Disables ANSI color codes in console output. |
+| `--html` | | `Path` | `None` | Export clickable interactive HTML report to file path. |
+| `--open-html` | | `flag` | `False` | Automatically opens generated HTML report in default browser. |
 | `--help` | `-h` | | | Displays argument documentation and exits. |
 
 ---
@@ -134,7 +147,13 @@ python main.py mixes/track_mix_v1.wav masters/track_master_v1.wav --mode precise
 
 #### Example Output (`precise` mode):
 ```text
-audiodelta analyzing audio files [precise mode]...
+audiodelta analyzing tracks [precise mode]...
+  [1/6] track_mix_v1.wav: Loading and decoding audio stream...
+  [2/6] track_mix_v1.wav: Auditing stereo correlation and phase stability...
+  [3/6] track_mix_v1.wav: Calculating ITU-R BS.1770-4 polyphase true peak...
+  [4/6] track_mix_v1.wav: Measuring integrated LUFS and loudness range...
+  [5/6] track_mix_v1.wav: Resampling and extracting harmonic/timbral features...
+  [6/6] track_mix_v1.wav: Evaluating musical key and 4-band spectral distribution...
 
 [SONG A] track_mix_v1.wav
   Duration:         03:30.00 (210.00 s)
@@ -197,14 +216,14 @@ Song A Location   Song B Location   Duration  Composite  Harmonic  Timbral
 -----------------------------------------------------------------
 STRUCTURAL EDIT AUDIT (Verified Bipartite Allocation)
 -----------------------------------------------------------------
-  Song A verified shared duration:   210.0 s (100.0%)
-  Song B verified shared duration:   210.0 s (100.0%)
+  Song A in Song B (shared duration):  210.0 s (100.0%)
+  Song B in Song A (shared duration):  210.0 s (100.0%)
 ```
 
 ---
 
 ### 2. Arrangement & Edit Comparison (Simple Mode)
-Compare an Original Track against a Radio Edit using concise production wording:
+Compare an Original Track against an Extended Mix or Radio Edit using intuitive producer terms:
 
 ```bash
 python main.py original.wav radio_edit.wav --mode simple
@@ -212,43 +231,41 @@ python main.py original.wav radio_edit.wav --mode simple
 
 #### Example Output (`simple` mode):
 ```text
-audiodelta analyzing audio files [simple mode]...
+audiodelta analyzing tracks [simple mode]...
 
 [SONG A] original.wav
-  Duration:        05:12.00 (312.00 s)
+  Length:          05:12.00 (312.0s)
   Channels:        Stereo (2 channels)
   Tempo:           128.0 BPM
   Key:             F# Minor
   Loudness:        -14.0 LUFS
   Dynamic Range:   7.1 LU
-  Peak Level:      -0.30 dB
-  True Peak:       -0.10 dB
-  Punch:           11.80 dB
-  Stereo Width:    +0.91 (Worst spot: +0.60)
-  Phase Inversion: 0.0% inverted
-  Mono Drop:       -0.20 dB
-  Center vs Sides: -13.5 dB
-  Frequencies:
+  Punch:           11.8 dB crest
+  Peak Level:      -0.30 dB (true peak: -0.10 dB)
+  Stereo Field:    +0.91 correlation (worst dip: +0.60)
+  Phase Health:    0.0% out-of-phase
+  Mono Drop:       -0.20 dB loss
+  Side vs Center:  -13.5 dB
+  Frequency Energy:
     * Bass (20-250 Hz)    : -6.0 dB
     * Lows (250-1000 Hz)  : -5.0 dB
     * Highs (1-5 kHz)     : -8.0 dB
     * Air (5-20 kHz)      : -11.5 dB
 
 [SONG B] radio_edit.wav
-  Duration:        03:15.00 (195.00 s)
+  Length:          03:15.00 (195.0s)
   Channels:        Stereo (2 channels)
   Tempo:           128.0 BPM
   Key:             F# Minor
   Loudness:        -13.8 LUFS
   Dynamic Range:   6.9 LU
-  Peak Level:      -0.30 dB
-  True Peak:       -0.10 dB
-  Punch:           11.70 dB
-  Stereo Width:    +0.91 (Worst spot: +0.60)
-  Phase Inversion: 0.0% inverted
-  Mono Drop:       -0.20 dB
-  Center vs Sides: -13.5 dB
-  Frequencies:
+  Punch:           11.7 dB crest
+  Peak Level:      -0.30 dB (true peak: -0.10 dB)
+  Stereo Field:    +0.91 correlation (worst dip: +0.60)
+  Phase Health:    0.0% out-of-phase
+  Mono Drop:       -0.20 dB loss
+  Side vs Center:  -13.5 dB
+  Frequency Energy:
     * Bass (20-250 Hz)    : -6.0 dB
     * Lows (250-1000 Hz)  : -5.0 dB
     * Highs (1-5 kHz)     : -8.0 dB
@@ -257,16 +274,16 @@ audiodelta analyzing audio files [simple mode]...
 =================================================================
 MIX COMPARISON (Song B vs. Song A)
 =================================================================
-  Loudness:         +0.2 LU (Matched)
-  Dynamic Range:    -0.2 LU (Consistent)
-  Punch:            -0.1 dB (Preserved)
-  Peak Level:       +0.00 dB (-0.30 dB)
-  True Peak:        +0.00 dB (-0.10 dB)
-  Stereo Width:     +0.91 (+0.60 worst)
-  Phase Inversion:  0.0% inverted
-  Mono Drop:        -0.20 dB
-  Width Change:     +0.0 dB (Unchanged)
-  Frequency Changes:
+  Loudness:        +0.2 LU (Matched)
+  Dynamic Range:   -0.2 LU (Consistent)
+  Punch:           -0.1 dB (Preserved)
+  Peak Level:      +0.00 dB (-0.30 dB sample peak)
+  True Peak:       +0.00 dB (-0.10 dB inter-sample)
+  Stereo Field:    +0.91 correlation (+0.60 worst)
+  Phase Health:    0.0% out-of-phase
+  Mono Drop:       -0.20 dB in mono
+  Stereo Image:    +0.0 dB side energy (Unchanged)
+  Frequency Shifts:
     * Bass            : +0.0 dB (Same)
     * Lows            : +0.0 dB (Same)
     * Highs           : +0.0 dB (Same)
@@ -281,12 +298,12 @@ Song A            Song B            Length    Match      Melody    Tone
 03:00.00-04:45.00 01:45.00-03:30.00 105.0 s   98.9%      99.7%     97.1%
 
 -----------------------------------------------------------------
-ARRANGEMENT CHANGES
+ARRANGEMENT BREAKDOWN
 -----------------------------------------------------------------
-  Song A shared:    195.0 s (62.5%)
-  Song B shared:    195.0 s (100.0%)
+  Song A in Song B:  195.0 s (62.5% of Song A)
+  Song B in Song A:  195.0 s (100.0% of Song B)
 
-  Removed from Song A:
+  Cut from Song A (missing in Song B):
      * 00:00.00 - 00:45.00 (45.0 s)
      * 02:15.00 - 03:00.00 (45.0 s)
      * 04:45.00 - 05:12.00 (27.0 s)
@@ -294,12 +311,14 @@ ARRANGEMENT CHANGES
 
 ---
 
-### 3. Sample Detection with Adjusted Length and Threshold
-Find short sampled snippets ($\ge 1.5\text{ seconds}$) with a custom match threshold ($0.65$):
+### 3. Interactive Clickable HTML Report Export
+Generate an interactive report and automatically launch it in your default web browser:
 
 ```bash
-python main.py original_sample.wav remix_stem.wav --min-len 1.5 --threshold 0.65
+python main.py mix.wav master.wav --html comparison.html --open-html
 ```
+
+The exported HTML file uses responsive CSS and native `<details><summary>` tags so you can click to expand and collapse every shared section, mix delta, and arrangement edit.
 
 ---
 
@@ -312,7 +331,7 @@ from pathlib import Path
 from core.features import analyze_track
 from core.snippets import find_snippets
 from core.coverage import compute_verified_coverage
-from core.report import print_full_report
+from core.report import generate_html_report, print_full_report
 
 # 1. Analyze both tracks
 track_a = analyze_track(Path("reference.wav"))
@@ -324,7 +343,7 @@ print(f"Track A True Peak:        {track_a.true_peak_dbtp:.2f} dBTP")
 print(f"Track B Crest Factor:     {track_b.crest_factor_db:.2f} dB")
 print(f"Track B Phase Inversion:  {track_b.stereo.pct_negative_windows:.1f}%")
 
-# 2. Find matching musical snippets
+# 2. Find matching musical snippets (with competitive suppression)
 snippets = find_snippets(
     track_a,
     track_b,
@@ -344,12 +363,13 @@ sec_a, sec_b, pct_a, pct_b, cuts_a, additions_b = compute_verified_coverage(
     snippets
 )
 
-print(f"Verified Shared Duration in Track A: {sec_a:.1f}s ({pct_a:.1f}%)")
-print(f"Cuts unique to Track A: {cuts_a}")
-print(f"Additions unique to Track B: {additions_b}")
+print(f"Song A in Song B: {sec_a:.1f}s ({pct_a:.1f}%)")
+print(f"Cuts unique to Song A: {cuts_a}")
+print(f"Additions unique to Song B: {additions_b}")
 
-# 4. Print reports in 'simple' or 'precise' format
-print_full_report(track_a, track_b, snippets, mode="precise")
+# 4. Print console report or generate interactive HTML report
+print_full_report(track_a, track_b, snippets, mode="simple")
+generate_html_report(track_a, track_b, snippets, output_path=Path("report.html"))
 ```
 
 ---
@@ -370,14 +390,14 @@ pytest -v
 
 ### Test Coverage Highlights
 - **`tests/testmodels.py`:** Dataclass structures, default types, and property initializations.
-- **`tests/testutils.py`:** Centisecond time formatting, edge cases ($0.0\text{s}$, negative values), and 1D interval subtraction edge cases (non-overlap, head/tail cuts, internal splits, multi-interval claims).
-- **`tests/testpeak.py`:** Polyphase 48-tap FIR interpolation validation, inter-sample true-peak overshoot detection ($> 0.0\text{ dBTP}$), high sample rate fallback ($> 96\text{ kHz}$), and memory chunking boundaries.
+- **`tests/testutils.py`:** Centisecond time formatting, interval subtraction arithmetic, `ProgressBar` TTY logic, ANSI `Colors` formatting, and `NO_COLOR` environment handling.
+- **`tests/testpeak.py`:** Polyphase 48-tap FIR interpolation validation, inter-sample true-peak overshoot detection ($> 0.0\text{ dBTP}$), high sample rate fallback ($> 96\text{ kHz}$), chunking loops, and progress callbacks.
 - **`tests/teststereo.py`:** Mono (1D and 2D arrays), perfect dual-mono ($+1.0$), complete anti-phase ($-1.0$), decorrelated orthogonal stereo ($0.0$), and phase cancellation fallback to single-channel routing.
-- **`tests/testfeatures.py`:** Key profile estimation across all 12 major and minor modes, Welch PSD spectral power distributions, and MFCC CMVN zero-mean normalizations.
-- **`tests/testsnippets.py`:** Feature matrix time-stretching, diagonal cross-correlation run extraction, offset alignment deduplication, and tempo scaling ($0.5\times, 1.0\times, 2.0\times$).
+- **`tests/testfeatures.py`:** Key profile estimation across all 12 major and minor modes, Welch PSD spectral power distributions, MFCC CMVN zero-mean normalizations, and pitch-class mean-centered chroma verification.
+- **`tests/testsnippets.py`:** Feature matrix time-stretching, diagonal cross-correlation run extraction, offset alignment deduplication, tempo scaling ($0.5\times, 1.0\times, 2.0\times$), contiguous snippet consolidation, and verification that distinct unrelated songs yield zero false-positive matches.
 - **`tests/testcoverage.py`:** Bipartite non-overlapping allocation, interval subtraction verification, and structural edit discovery.
-- **`tests/testreport.py`:** Output verification confirming both simple and precise modes print all metrics, with simple mode omitting explanatory warnings.
-- **`tests/testintegration.py`:** End-to-end execution of synthetic audio analysis, report generation, and CLI exit codes for valid and invalid argument sets.
+- **`tests/testreport.py`:** Output verification confirming both simple and precise modes print all metrics, overhauled wording (`Song A in Song B`), and interactive HTML report generation with clickable `<details>` and `<summary>` tags.
+- **`tests/testintegration.py`:** End-to-end execution of synthetic audio analysis, report generation, `--html` export, and CLI exit codes for valid and invalid argument sets.
 
 ---
 
@@ -389,27 +409,28 @@ audiodelta/
 │   ├── __init__.py      # Public exports and package definition
 │   ├── constants.py     # Filter taps, frequency limits, pitch profiles
 │   ├── models.py        # Dataclasses (MatchedSnippet, StereoAudit, TrackAnalysis)
-│   ├── utils.py         # Time string formatting and interval subtraction arithmetic
+│   ├── utils.py         # Time formatting, interval arithmetic, colors, progress bars
 │   ├── peak.py          # Sample peak and polyphase FIR true-peak engine
 │   ├── stereo.py        # Stereo field, sliding correlation, and mid/side analysis
-│   ├── features.py      # Welch PSD, key detection, MFCC/chroma, track analysis
-│   ├── snippets.py      # Diagonal cross-correlation and snippet deduplication
+│   ├── features.py      # Welch PSD, key detection, centered chroma, track analysis
+│   ├── snippets.py      # Cross-correlation, suppression, and consolidation
 │   ├── coverage.py      # Bipartite interval subtraction allocator
-│   ├── report.py        # Dual-mode console report formatter (simple & precise)
+│   ├── report.py        # Dual-mode console reports and interactive HTML generation
 │   └── cli.py           # Argument parser and CLI execution entry point
 ├── tests/
 │   ├── __init__.py
 │   ├── testmodels.py    # Dataclass initialization and field validation tests
-│   ├── testutils.py     # Time formatting and interval subtraction unit tests
+│   ├── testutils.py     # Time formatting, interval subtraction, and color tests
 │   ├── testpeak.py      # Sample peak and true-peak DSP oversampling tests
 │   ├── teststereo.py    # Mono, stereo, anti-phase, and multichannel tests
-│   ├── testfeatures.py  # Key estimation, spectral balance, and feature extraction tests
-│   ├── testsnippets.py  # Feature resampling, diagonal matching, and deduplication tests
+│   ├── testfeatures.py  # Key estimation, spectral balance, and centered chroma tests
+│   ├── testsnippets.py  # Feature resampling, consolidation, and false-positive tests
 │   ├── testcoverage.py  # Bipartite non-overlapping allocation and edit gap tests
-│   ├── testreport.py    # Output format validation for simple and precise modes
+│   ├── testreport.py    # Output format validation and HTML report tests
 │   └── testintegration.py # End-to-end integration and CLI pipeline tests
 ├── main.py              # Top-level executable runner
 ├── pytest.ini           # Pytest test discovery configuration
+├── .gitignore           # Ignored files, virtual environments, and caches
 └── README.md            # Project documentation and usage guide
 ```
 
@@ -417,4 +438,4 @@ audiodelta/
 
 ## License
 
-Audiodelta is open source under the MIT License.
+MIT License. Engineered for open source audio quality control, production, and mastering research.
