@@ -87,6 +87,8 @@ def test_track_card_color_formatting(capsys):
     print_track_card("SONG A", track, mode="precise", use_color=True)
     out = capsys.readouterr().out
     assert "\033[" in out
+    # Verifies color escape codes enclose the values
+    assert "\033[1;33m" in out or "\033[1;36m" in out
 
 
 def test_mix_deltas_simple_mode_avoids_explanations(capsys):

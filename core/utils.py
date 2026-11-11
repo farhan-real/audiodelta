@@ -1,10 +1,11 @@
 """
-Utility functions for time formatting, interval subtraction, progress bars, and ANSI terminal colors.
+Utility functions for time formatting, interval subtraction, progress bars, ANSI colors,
+and OS-level C library stderr suppression.
 """
 
+from contextlib import contextmanager
 import os
 import sys
-from contextlib import contextmanager
 from typing import Generator, List, Optional, Tuple
 
 
@@ -23,6 +24,8 @@ class Colors:
     BOLD_RED = "\033[1;31m"
     BOLD_GREEN = "\033[1;32m"
     BOLD_YELLOW = "\033[1;33m"
+    BOLD_BLUE = "\033[1;34m"
+    BOLD_MAGENTA = "\033[1;35m"
     BOLD_CYAN = "\033[1;36m"
     BOLD_WHITE = "\033[1;37m"
 
@@ -43,9 +46,60 @@ def colorize(text: str, color_code: str, enabled: bool = True) -> str:
     return f"{color_code}{text}{Colors.RESET}"
 
 
+def c_num(value: str, color: str = Colors.BOLD_YELLOW, enabled: bool = True) -> str:
+    """Colors numeric strings with bold contrast."""
+    return colorize(value, color, enabled)
+
+
+def c_peak(val: float, text: Optional[str] = None, enabled: bool = True) -> str:
+    """Colors peak audio levels with red alert for clipping, yellow near ceiling, green safe."""
+    str_val = f"{val:.2f} dB" if text is None else text
+    if val > 0.0:
+        return colorize(str_val, Colors.BOLD_RED, enabled)
+    if val > -1.0:
+        return colorize(str_val, Colors.BOLD_YELLOW, enabled)
+    return colorize(str_val, Colors.BOLD_GREEN, enabled)
+
+
+def c_corr(val: float, text: Optional[str] = None, enabled: bool = True) -> str:
+    """Colors correlation numbers: green for healthy, yellow for narrow/dip, red for anti-phase."""
+    str_val = f"{val:+.2f}" if text is None else text
+    if val >= 0.75:
+        return colorize(str_val, Colors.BOLD_GREEN, enabled)
+    if val >= 0.20:
+        return colorize(str_val, Colors.BOLD_YELLOW, enabled)
+    return colorize(str_val, Colors.BOLD_RED, enabled)
+
+
+def c_delta(val: float, unit: str = "dB", positive_good: bool = True, enabled: bool = True) -> str:
+    """Colors delta shifts with green for positive enhancements and yellow/red for cuts."""
+    str_val = f"{val:+.1f} {unit}".strip()
+    if abs(val) <= 0.2:
+        return colorize(str_val, Colors.DIM, enabled)
+    if val > 0:
+        col = Colors.BOLD_GREEN if positive_good else Colors.BOLD_YELLOW
+    else:
+        col = Colors.BOLD_YELLOW if positive_good else Colors.BOLD_GREEN
+    return colorize(str_val, col, enabled)
+
+
+def c_pct(val: float, enabled: bool = True) -> str:
+    """Colors percentage values with green for high similarity and yellow/cyan for lower."""
+    str_val = f"{val:.1f}%"
+    if val >= 90.0:
+        return colorize(str_val, Colors.BOLD_GREEN, enabled)
+    if val >= 75.0:
+        return colorize(str_val, Colors.BOLD_YELLOW, enabled)
+    return colorize(str_val, Colors.CYAN, enabled)
+
+
 @contextmanager
 def suppress_c_stderr() -> Generator[None, None, None]:
-    """Temporarily redirect low-level C library stderr output to the null device."""
+    """
+    Context manager that temporarily suppresses low-level C library stderr output
+    (such as libmpg123 / libsndfile ID3 parser messages) by redirecting file descriptor 2 to devnull.
+    Guarantees a single yield and proper exception propagation out of the caller block.
+    """
     redirected = False
     saved_stderr_fd = -1
     stderr_fileno = -1
@@ -54,16 +108,12 @@ def suppress_c_stderr() -> Generator[None, None, None]:
         stderr_fileno = sys.stderr.fileno()
         saved_stderr_fd = os.dup(stderr_fileno)
         null_fd = os.open(os.devnull, os.O_WRONLY)
-        try:
-            sys.stderr.flush()
-            os.dup2(null_fd, stderr_fileno)
-            redirected = True
-        finally:
-            os.close(null_fd)
-    except (AttributeError, OSError, ValueError):
-        if saved_stderr_fd >= 0:
-            os.close(saved_stderr_fd)
-        saved_stderr_fd = -1
+        sys.stderr.flush()
+        os.dup2(null_fd, stderr_fileno)
+        os.close(null_fd)
+        redirected = True
+    except Exception:
+        redirected = False
 
     try:
         yield
@@ -72,8 +122,9 @@ def suppress_c_stderr() -> Generator[None, None, None]:
             try:
                 sys.stderr.flush()
                 os.dup2(saved_stderr_fd, stderr_fileno)
-            finally:
                 os.close(saved_stderr_fd)
+            except Exception:
+                pass
 
 
 class ProgressBar:

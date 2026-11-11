@@ -1,6 +1,6 @@
 """
 Dual-mode console reporting for audiodelta supporting simple/precise wording,
-ANSI terminal coloring, and interactive clickable HTML report generation.
+vibrant ANSI terminal coloring for numbers and metrics, and interactive HTML generation.
 """
 
 from pathlib import Path
@@ -9,7 +9,16 @@ import webbrowser
 
 from core.coverage import compute_verified_coverage
 from core.models import MatchedSnippet, TrackAnalysis
-from core.utils import Colors, colorize, fmt_time
+from core.utils import (
+    Colors,
+    c_corr,
+    c_delta,
+    c_num,
+    c_pct,
+    c_peak,
+    colorize,
+    fmt_time,
+)
 
 
 def _format_key_simple(key: str) -> str:
@@ -24,35 +33,46 @@ def print_track_card(
     mode: str = "precise",
     use_color: bool = True
 ) -> None:
-    """Prints a structured summary card for a single analyzed track with optional coloring."""
-    tag = colorize(f"[{label}]", Colors.BOLD_CYAN, use_color)
+    """Prints a structured summary card for a single analyzed track with vibrant metric coloring."""
+    tag_color = Colors.BOLD_CYAN if label == "SONG A" else Colors.BOLD_MAGENTA
+    tag = colorize(f"[{label}]", tag_color, use_color)
+    name_str = colorize(t.path.name, Colors.BOLD_WHITE, use_color)
 
     if mode == "simple":
-        print(f"\n{tag} {colorize(t.path.name, Colors.BOLD_WHITE, use_color)}")
-        print(f"  Length:          {fmt_time(t.duration)} ({t.duration:.1f}s)")
+        print(f"\n{tag} {name_str}")
+        t_str = f"{fmt_time(t.duration)} ({t.duration:.1f}s)"
+        print(f"  Length:          {colorize(t_str, Colors.BOLD_YELLOW, use_color)}")
         ch_desc = "Mono (1 channel)" if t.stereo.channel_count == 1 else f"Stereo ({t.stereo.channel_count} channels)"
-        print(f"  Channels:        {ch_desc}")
-        print(f"  Tempo:           {t.bpm:.1f} BPM")
-        print(f"  Key:             {_format_key_simple(t.key)}")
-        lufs_str = f"{t.lufs:.1f} LUFS" if t.lufs is not None else "N/A"
-        lra_str = f"{t.lra:.1f} LU" if t.lra is not None else "N/A"
+        print(f"  Channels:        {colorize(ch_desc, Colors.WHITE, use_color)}")
+        print(f"  Tempo:           {c_num(f'{t.bpm:.1f}', Colors.BOLD_YELLOW, use_color)} {colorize('BPM', Colors.DIM, use_color)}")
+        print(f"  Key:             {colorize(_format_key_simple(t.key), Colors.BOLD_CYAN, use_color)}")
+
+        lufs_str = f"{c_num(f'{t.lufs:.1f}', Colors.BOLD_YELLOW, use_color)} {colorize('LUFS', Colors.DIM, use_color)}" if t.lufs is not None else colorize("N/A", Colors.DIM, use_color)
+        lra_str = f"{c_num(f'{t.lra:.1f}', Colors.BOLD_YELLOW, use_color)} {colorize('LU', Colors.DIM, use_color)}" if t.lra is not None else colorize("N/A", Colors.DIM, use_color)
         print(f"  Loudness:        {lufs_str}")
         print(f"  Dynamic Range:   {lra_str}")
-        print(f"  Punch:           {t.crest_factor_db:.1f} dB crest")
-        print(f"  Peak Level:      {t.sample_peak_dbfs:.2f} dB (true peak: {t.true_peak_dbtp:.2f} dB)")
+        print(f"  Punch:           {c_num(f'{t.crest_factor_db:.1f}', Colors.BOLD_YELLOW, use_color)} {colorize('dB crest', Colors.DIM, use_color)}")
+
+        sp_col = c_peak(t.sample_peak_dbfs, f"{t.sample_peak_dbfs:.2f} dB", use_color)
+        tp_col = c_peak(t.true_peak_dbtp, f"{t.true_peak_dbtp:.2f} dB", use_color)
+        print(f"  Peak Level:      {sp_col} (true peak: {tp_col})")
 
         st = t.stereo
-        print(f"  Stereo Field:    {st.global_correlation:+.2f} correlation (worst dip: {st.min_window_correlation:+.2f})")
-        inv_str = f"{st.pct_negative_windows:.1f}% out-of-phase"
-        if st.pct_negative_windows > 10.0:
-            inv_str = colorize(inv_str, Colors.YELLOW, use_color)
+        corr_col = c_corr(st.global_correlation, f"{st.global_correlation:+.2f}", use_color)
+        worst_col = c_corr(st.min_window_correlation, f"{st.min_window_correlation:+.2f}", use_color)
+        print(f"  Stereo Field:    {corr_col} correlation (worst dip: {worst_col})")
+
+        inv_color = Colors.BOLD_GREEN if st.pct_negative_windows == 0.0 else (Colors.BOLD_YELLOW if st.pct_negative_windows < 10.0 else Colors.BOLD_RED)
+        inv_str = colorize(f"{st.pct_negative_windows:.1f}% out-of-phase", inv_color, use_color)
         print(f"  Phase Health:    {inv_str}")
-        print(f"  Mono Drop:       {st.mono_loss_db:.2f} dB loss")
+
+        drop_col = Colors.BOLD_GREEN if st.mono_loss_db > -0.5 else (Colors.BOLD_YELLOW if st.mono_loss_db > -2.0 else Colors.BOLD_RED)
+        print(f"  Mono Drop:       {colorize(f'{st.mono_loss_db:.2f} dB', drop_col, use_color)} loss")
         ms_str = "Center only" if st.mid_side_ratio_db <= -90.0 else f"{st.mid_side_ratio_db:.1f} dB"
-        print(f"  Side vs Center:  {ms_str}")
+        print(f"  Side vs Center:  {c_num(ms_str, Colors.BOLD_YELLOW, use_color)}")
 
         if t.spectral_balance_db:
-            print("  Frequency Energy:")
+            print(f"  {colorize('Frequency Energy:', Colors.CYAN, use_color)}")
             band_map = {
                 "Sub/Bass (20-250 Hz)": "Bass (20-250 Hz)",
                 "Low-Mid (250-1000 Hz)": "Lows (250-1000 Hz)",
@@ -60,33 +80,45 @@ def print_track_card(
                 "Air (5-20 kHz)": "Air (5-20 kHz)"
             }
             for k, v in t.spectral_balance_db.items():
-                print(f"    * {band_map.get(k, k):<20}: {v:.1f} dB")
+                b_name = band_map.get(k, k)
+                print(f"    * {colorize(f'{b_name:<20}', Colors.WHITE, use_color)}: {c_num(f'{v:.1f} dB', Colors.BOLD_YELLOW, use_color)}")
     else:
-        print(f"\n{tag} {colorize(t.path.name, Colors.BOLD_WHITE, use_color)}")
-        print(f"  Duration:         {fmt_time(t.duration)} ({t.duration:.2f} s)")
-        print(f"  Channel Format:   {t.stereo.channel_layout_desc}")
-        print(f"  Estimated BPM:    {t.bpm:.1f}")
-        print(f"  Estimated Key:    {t.key}")
-        lufs_str = f"{t.lufs:.1f} LUFS" if t.lufs is not None else "N/A"
-        lra_str = f"{t.lra:.1f} LU" if t.lra is not None else "N/A"
-        print(f"  Loudness (LUFS):  {lufs_str:<10} | LRA: {lra_str}")
-        print(f"  Sample Peak:      {t.sample_peak_dbfs:.2f} dBFS   | True Peak: {t.true_peak_dbtp:.2f} dBTP")
-        print(f"  Dynamic Punch:    {t.crest_factor_db:.2f} dB Crest Factor (True Peak / RMS)")
+        print(f"\n{tag} {name_str}")
+        t_str = f"{fmt_time(t.duration)} ({t.duration:.2f} s)"
+        print(f"  Duration:         {colorize(t_str, Colors.BOLD_YELLOW, use_color)}")
+        print(f"  Channel Format:   {colorize(t.stereo.channel_layout_desc, Colors.WHITE, use_color)}")
+        print(f"  Estimated BPM:    {c_num(f'{t.bpm:.1f}', Colors.BOLD_YELLOW, use_color)}")
+        print(f"  Estimated Key:    {colorize(t.key, Colors.BOLD_CYAN, use_color)}")
+
+        lufs_str = f"{c_num(f'{t.lufs:.1f}', Colors.BOLD_YELLOW, use_color)} {colorize('LUFS', Colors.DIM, use_color)}" if t.lufs is not None else colorize("N/A", Colors.DIM, use_color)
+        lra_str = f"{c_num(f'{t.lra:.1f}', Colors.BOLD_YELLOW, use_color)} {colorize('LU', Colors.DIM, use_color)}" if t.lra is not None else colorize("N/A", Colors.DIM, use_color)
+        print(f"  Loudness (LUFS):  {lufs_str:<18} | LRA: {lra_str}")
+
+        sp_col = c_peak(t.sample_peak_dbfs, f"{t.sample_peak_dbfs:.2f} dBFS", use_color)
+        tp_col = c_peak(t.true_peak_dbtp, f"{t.true_peak_dbtp:.2f} dBTP", use_color)
+        print(f"  Sample Peak:      {sp_col:<18} | True Peak: {tp_col}")
+        print(f"  Dynamic Punch:    {c_num(f'{t.crest_factor_db:.2f} dB', Colors.BOLD_YELLOW, use_color)} {colorize('Crest Factor (True Peak / RMS)', Colors.DIM, use_color)}")
 
         st = t.stereo
         ms_str = "Mono" if st.mid_side_ratio_db <= -90.0 else f"{st.mid_side_ratio_db:.1f} dB"
-        print(f"  Stereo Field:     Global Corr: {st.global_correlation:+.2f} | M/S Energy Ratio: {ms_str}")
-        print(f"  Phase Stability:  Min Window:  {st.min_window_correlation:+.2f} | Negative Windows: {st.pct_negative_windows:.1f}%")
+        corr_col = c_corr(st.global_correlation, f"{st.global_correlation:+.2f}", use_color)
+        print(f"  Stereo Field:     Global Corr: {corr_col} | M/S Energy Ratio: {c_num(ms_str, Colors.BOLD_YELLOW, use_color)}")
+
+        worst_col = c_corr(st.min_window_correlation, f"{st.min_window_correlation:+.2f}", use_color)
+        inv_color = Colors.BOLD_GREEN if st.pct_negative_windows == 0.0 else (Colors.BOLD_YELLOW if st.pct_negative_windows < 10.0 else Colors.BOLD_RED)
+        inv_str = colorize(f"{st.pct_negative_windows:.1f}%", inv_color, use_color)
+        print(f"  Phase Stability:  Min Window:  {worst_col} | Negative Windows: {inv_str}")
+
         if st.mono_loss_db < -0.2:
-            print(f"  Mono Fold-Down:   {st.mono_loss_db:.2f} dB Power Loss upon mono sum")
+            print(f"  Mono Fold-Down:   {c_num(f'{st.mono_loss_db:.2f} dB', Colors.BOLD_YELLOW, use_color)} Power Loss upon mono sum")
         if st.mono_fallback_used:
-            notice = colorize("  [NOTICE] Severe out-of-phase mono cancellation; Left channel was used for feature extraction.", Colors.YELLOW, use_color)
+            notice = colorize("  [NOTICE] Severe out-of-phase mono cancellation; Left channel was used for feature extraction.", Colors.BOLD_YELLOW, use_color)
             print(notice)
 
         if t.spectral_balance_db:
-            print("  4-Band Relative Power:")
+            print(f"  {colorize('4-Band Relative Power:', Colors.CYAN, use_color)}")
             for k, v in t.spectral_balance_db.items():
-                print(f"    * {k:<24}: {v:.1f} dB")
+                print(f"    * {colorize(f'{k:<24}', Colors.WHITE, use_color)}: {c_num(f'{v:.1f} dB', Colors.BOLD_YELLOW, use_color)}")
 
 
 def print_mix_deltas(
@@ -95,7 +127,7 @@ def print_mix_deltas(
     mode: str = "precise",
     use_color: bool = True
 ) -> None:
-    """Prints comparative mix deltas between Song A and Song B with color indicators."""
+    """Prints comparative mix deltas between Song A and Song B with rich metric color highlights."""
     rule = colorize("=" * 65, Colors.CYAN, use_color)
 
     if mode == "simple":
@@ -106,41 +138,52 @@ def print_mix_deltas(
         if a.lufs is not None and b.lufs is not None:
             delta_lufs = b.lufs - a.lufs
             if delta_lufs > 0.2:
-                direction = colorize("Louder", Colors.GREEN, use_color)
+                direction = colorize("Louder", Colors.BOLD_GREEN, use_color)
+                d_str = c_num(f"{delta_lufs:+.1f} LU", Colors.BOLD_GREEN, use_color)
             elif delta_lufs < -0.2:
-                direction = colorize("Quieter", Colors.YELLOW, use_color)
+                direction = colorize("Quieter", Colors.BOLD_YELLOW, use_color)
+                d_str = c_num(f"{delta_lufs:+.1f} LU", Colors.BOLD_YELLOW, use_color)
             else:
-                direction = "Matched"
-            print(f"  Loudness:        {delta_lufs:+.1f} LU ({direction})")
+                direction = colorize("Matched", Colors.DIM, use_color)
+                d_str = c_num(f"{delta_lufs:+.1f} LU", Colors.DIM, use_color)
+            print(f"  Loudness:        {d_str} ({direction})")
         else:
             print("  Loudness:        N/A")
 
         if a.lra is not None and b.lra is not None:
             delta_lra = b.lra - a.lra
-            spread = "More dynamic" if delta_lra > 0.5 else "Tighter" if delta_lra < -0.5 else "Consistent"
-            print(f"  Dynamic Range:   {delta_lra:+.1f} LU ({spread})")
+            spread = colorize("More dynamic", Colors.BOLD_GREEN, use_color) if delta_lra > 0.5 else (colorize("Tighter", Colors.BOLD_YELLOW, use_color) if delta_lra < -0.5 else colorize("Consistent", Colors.DIM, use_color))
+            print(f"  Dynamic Range:   {c_delta(delta_lra, 'LU', enabled=use_color)} ({spread})")
 
         delta_crest = b.crest_factor_db - a.crest_factor_db
-        crest_tag = "Punchier" if delta_crest > 0.5 else "More compressed" if delta_crest < -0.5 else "Preserved"
-        print(f"  Punch:           {delta_crest:+.1f} dB ({crest_tag})")
+        crest_tag = colorize("Punchier", Colors.BOLD_GREEN, use_color) if delta_crest > 0.5 else (colorize("More compressed", Colors.BOLD_YELLOW, use_color) if delta_crest < -0.5 else colorize("Preserved", Colors.DIM, use_color))
+        print(f"  Punch:           {c_delta(delta_crest, 'dB', enabled=use_color)} ({crest_tag})")
 
         delta_sample = b.sample_peak_dbfs - a.sample_peak_dbfs
         delta_true = b.true_peak_dbtp - a.true_peak_dbtp
-        print(f"  Peak Level:      {delta_sample:+.2f} dB ({b.sample_peak_dbfs:.2f} dB sample peak)")
-        print(f"  True Peak:       {delta_true:+.2f} dB ({b.true_peak_dbtp:.2f} dB inter-sample)")
+        sp_sub = c_peak(b.sample_peak_dbfs, f"{b.sample_peak_dbfs:.2f} dB sample peak", use_color)
+        tp_sub = c_peak(b.true_peak_dbtp, f"{b.true_peak_dbtp:.2f} dB inter-sample", use_color)
+        print(f"  Peak Level:      {c_delta(delta_sample, 'dB', positive_good=False, enabled=use_color)} ({sp_sub})")
+        print(f"  True Peak:       {c_delta(delta_true, 'dB', positive_good=False, enabled=use_color)} ({tp_sub})")
 
         st_b = b.stereo
-        print(f"  Stereo Field:    {st_b.global_correlation:+.2f} correlation ({st_b.min_window_correlation:+.2f} worst)")
-        print(f"  Phase Health:    {st_b.pct_negative_windows:.1f}% out-of-phase")
-        print(f"  Mono Drop:       {st_b.mono_loss_db:.2f} dB in mono")
+        corr_b = c_corr(st_b.global_correlation, f"{st_b.global_correlation:+.2f}", use_color)
+        worst_b = c_corr(st_b.min_window_correlation, f"{st_b.min_window_correlation:+.2f} worst", use_color)
+        print(f"  Stereo Field:    {corr_b} correlation ({worst_b})")
+
+        inv_color = Colors.BOLD_GREEN if st_b.pct_negative_windows == 0.0 else (Colors.BOLD_YELLOW if st_b.pct_negative_windows < 10.0 else Colors.BOLD_RED)
+        print(f"  Phase Health:    {colorize(f'{st_b.pct_negative_windows:.1f}% out-of-phase', inv_color, use_color)}")
+
+        drop_col = Colors.BOLD_GREEN if st_b.mono_loss_db > -0.5 else (Colors.BOLD_YELLOW if st_b.mono_loss_db > -2.0 else Colors.BOLD_RED)
+        print(f"  Mono Drop:       {colorize(f'{st_b.mono_loss_db:.2f} dB', drop_col, use_color)} in mono")
 
         if a.stereo.mid_side_ratio_db > -90.0 and st_b.mid_side_ratio_db > -90.0:
             delta_ms = st_b.mid_side_ratio_db - a.stereo.mid_side_ratio_db
-            w_dir = "Wider" if delta_ms > 0.5 else "Narrower" if delta_ms < -0.5 else "Unchanged"
-            print(f"  Stereo Image:    {delta_ms:+.1f} dB side energy ({w_dir})")
+            w_dir = colorize("Wider", Colors.BOLD_CYAN, use_color) if delta_ms > 0.5 else (colorize("Narrower", Colors.BOLD_YELLOW, use_color) if delta_ms < -0.5 else colorize("Unchanged", Colors.DIM, use_color))
+            print(f"  Stereo Image:    {c_num(f'{delta_ms:+.1f} dB', Colors.BOLD_CYAN, use_color)} side energy ({w_dir})")
 
         if a.spectral_balance_db and b.spectral_balance_db:
-            print("  Frequency Shifts:")
+            print(f"  {colorize('Frequency Shifts:', Colors.CYAN, use_color)}")
             band_map = {
                 "Sub/Bass (20-250 Hz)": "Bass",
                 "Low-Mid (250-1000 Hz)": "Lows",
@@ -151,13 +194,16 @@ def print_mix_deltas(
                 if band_name in b.spectral_balance_db:
                     delta_p = b.spectral_balance_db[band_name] - a.spectral_balance_db[band_name]
                     if delta_p > 0.5:
-                        status = colorize("Boosted", Colors.GREEN, use_color)
+                        status = colorize("Boosted", Colors.BOLD_GREEN, use_color)
+                        d_col = Colors.BOLD_GREEN
                     elif delta_p < -0.5:
-                        status = colorize("Cut", Colors.YELLOW, use_color)
+                        status = colorize("Cut", Colors.BOLD_YELLOW, use_color)
+                        d_col = Colors.BOLD_YELLOW
                     else:
-                        status = "Same"
+                        status = colorize("Same", Colors.DIM, use_color)
+                        d_col = Colors.DIM
                     short_name = band_map.get(band_name, band_name)
-                    print(f"    * {short_name:<16}: {delta_p:+.1f} dB ({status})")
+                    print(f"    * {colorize(f'{short_name:<16}', Colors.WHITE, use_color)}: {c_num(f'{delta_p:+.1f} dB', d_col, use_color)} ({status})")
     else:
         print(f"\n{rule}")
         print(colorize("MIX AND MASTERING AUDIT (Song B vs. Song A)", Colors.BOLD_CYAN, use_color))
@@ -166,38 +212,48 @@ def print_mix_deltas(
         if a.lufs is not None and b.lufs is not None:
             delta_lufs = b.lufs - a.lufs
             if delta_lufs > 0.2:
-                indicator = colorize("Louder", Colors.GREEN, use_color)
+                indicator = colorize("Louder", Colors.BOLD_GREEN, use_color)
+                d_str = c_num(f"{delta_lufs:+.1f} LU", Colors.BOLD_GREEN, use_color)
             elif delta_lufs < -0.2:
-                indicator = colorize("Quieter", Colors.YELLOW, use_color)
+                indicator = colorize("Quieter", Colors.BOLD_YELLOW, use_color)
+                d_str = c_num(f"{delta_lufs:+.1f} LU", Colors.BOLD_YELLOW, use_color)
             else:
-                indicator = "Matched loudness"
-            print(f"  Loudness:         Song B is {delta_lufs:+.1f} LU ({indicator})")
+                indicator = colorize("Matched loudness", Colors.DIM, use_color)
+                d_str = c_num(f"{delta_lufs:+.1f} LU", Colors.DIM, use_color)
+            print(f"  Loudness:         Song B is {d_str} ({indicator})")
         else:
             print("  Loudness:         N/A (LUFS not available)")
 
         if a.lra is not None and b.lra is not None:
             delta_lra = b.lra - a.lra
-            indicator = "More dynamic variation" if delta_lra > 0.5 else "More compressed" if delta_lra < -0.5 else "Consistent range"
-            print(f"  Loudness Range:   Song B is {delta_lra:+.1f} LU ({indicator})")
+            indicator = colorize("More dynamic variation", Colors.BOLD_GREEN, use_color) if delta_lra > 0.5 else (colorize("More compressed", Colors.BOLD_YELLOW, use_color) if delta_lra < -0.5 else colorize("Consistent range", Colors.DIM, use_color))
+            print(f"  Loudness Range:   Song B is {c_delta(delta_lra, 'LU', enabled=use_color)} ({indicator})")
 
         delta_crest = b.crest_factor_db - a.crest_factor_db
-        crest_indicator = "More dynamic punch" if delta_crest > 0.5 else "More limited/compressed" if delta_crest < -0.5 else "Preserved dynamics"
-        print(f"  Dynamic Punch:    {delta_crest:+.1f} dB Crest Factor ({crest_indicator})")
+        crest_indicator = colorize("More dynamic punch", Colors.BOLD_GREEN, use_color) if delta_crest > 0.5 else (colorize("More limited/compressed", Colors.BOLD_YELLOW, use_color) if delta_crest < -0.5 else colorize("Preserved dynamics", Colors.DIM, use_color))
+        print(f"  Dynamic Punch:    {c_delta(delta_crest, 'dB', enabled=use_color)} Crest Factor ({crest_indicator})")
 
         delta_sample = b.sample_peak_dbfs - a.sample_peak_dbfs
         delta_true = b.true_peak_dbtp - a.true_peak_dbtp
-        print(f"  Sample Peak:      Song B is {b.sample_peak_dbfs:.2f} dBFS (Delta: {delta_sample:+.2f} dBFS)")
+        sp_col = c_peak(b.sample_peak_dbfs, f"{b.sample_peak_dbfs:.2f} dBFS", use_color)
+        d_sp_col = c_delta(delta_sample, "dBFS", positive_good=False, enabled=use_color)
+        print(f"  Sample Peak:      Song B is {sp_col} (Delta: {d_sp_col})")
         if b.sample_peak_dbfs > 0.0:
             print(colorize("  [ALERT] Decoded audio file contains floating-point samples exceeding 0.0 dBFS.", Colors.BOLD_RED, use_color))
 
-        print(f"  True Peak:        Song B is {b.true_peak_dbtp:.2f} dBTP (Delta: {delta_true:+.2f} dBTP)")
+        tp_col = c_peak(b.true_peak_dbtp, f"{b.true_peak_dbtp:.2f} dBTP", use_color)
+        d_tp_col = c_delta(delta_true, "dBTP", positive_good=False, enabled=use_color)
+        print(f"  True Peak:        Song B is {tp_col} (Delta: {d_tp_col})")
         if b.true_peak_dbtp > 0.0 and b.sample_peak_dbfs <= 0.0:
             print(colorize("  [WARNING] Inter-sample true-peak overshoot detected (> 0.0 dBTP). Risk of DAC/lossy clipping.", Colors.BOLD_YELLOW, use_color))
         elif b.true_peak_dbtp > -1.0 and b.true_peak_dbtp <= 0.0:
-            print(colorize("  [NOTICE] True peak exceeds standard streaming ceiling (-1.0 dBTP target margin).", Colors.CYAN, use_color))
+            print(colorize("  [NOTICE] True peak exceeds standard streaming ceiling (-1.0 dBTP target margin).", Colors.BOLD_CYAN, use_color))
 
         st_b = b.stereo
-        print(f"\n  Stereo Correlation: {st_b.global_correlation:+.2f} (Worst Window: {st_b.min_window_correlation:+.2f})")
+        corr_b = c_corr(st_b.global_correlation, f"{st_b.global_correlation:+.2f}", use_color)
+        worst_b = c_corr(st_b.min_window_correlation, f"{st_b.min_window_correlation:+.2f}", use_color)
+        print(f"\n  Stereo Correlation: {corr_b} (Worst Window: {worst_b})")
+
         if st_b.pct_negative_windows > 15.0:
             print(colorize(f"  [CRITICAL] Severe mono cancellation: {st_b.pct_negative_windows:.1f}% of active windows have negative correlation.", Colors.BOLD_RED, use_color))
         elif st_b.pct_negative_windows > 5.0:
@@ -208,21 +264,24 @@ def print_mix_deltas(
 
         if a.stereo.mid_side_ratio_db > -90.0 and st_b.mid_side_ratio_db > -90.0:
             delta_ms = st_b.mid_side_ratio_db - a.stereo.mid_side_ratio_db
-            width_indicator = "Wider" if delta_ms > 0.5 else "Narrower" if delta_ms < -0.5 else "Unchanged"
-            print(f"  Stereo Width:     Side/Mid energy changed by {delta_ms:+.1f} dB ({width_indicator})")
+            width_indicator = colorize("Wider", Colors.BOLD_CYAN, use_color) if delta_ms > 0.5 else (colorize("Narrower", Colors.BOLD_YELLOW, use_color) if delta_ms < -0.5 else colorize("Unchanged", Colors.DIM, use_color))
+            print(f"  Stereo Width:     Side/Mid energy changed by {c_num(f'{delta_ms:+.1f} dB', Colors.BOLD_CYAN, use_color)} ({width_indicator})")
 
         if a.spectral_balance_db and b.spectral_balance_db:
-            print("\n  4-Band Spectral Balance Shift (Relative Share):")
+            print(f"\n  {colorize('4-Band Spectral Balance Shift (Relative Share):', Colors.CYAN, use_color)}")
             for band_name in a.spectral_balance_db:
                 if band_name in b.spectral_balance_db:
                     delta_p = b.spectral_balance_db[band_name] - a.spectral_balance_db[band_name]
                     if delta_p > 0.5:
-                        indicator = colorize("Boosted", Colors.GREEN, use_color)
+                        indicator = colorize("Boosted", Colors.BOLD_GREEN, use_color)
+                        d_col = Colors.BOLD_GREEN
                     elif delta_p < -0.5:
-                        indicator = colorize("Cut", Colors.YELLOW, use_color)
+                        indicator = colorize("Cut", Colors.BOLD_YELLOW, use_color)
+                        d_col = Colors.BOLD_YELLOW
                     else:
-                        indicator = "Even"
-                    print(f"    * {band_name:<24}: {delta_p:+.1f} dB [{indicator}]")
+                        indicator = colorize("Even", Colors.DIM, use_color)
+                        d_col = Colors.DIM
+                    print(f"    * {colorize(f'{band_name:<24}', Colors.WHITE, use_color)}: {c_num(f'{delta_p:+.1f} dB', d_col, use_color)} [{indicator}]")
 
 
 def print_snippet_report(
@@ -232,7 +291,7 @@ def print_snippet_report(
     mode: str = "precise",
     use_color: bool = True
 ) -> None:
-    """Prints snippet match list and arrangement breakdown."""
+    """Prints snippet match list and arrangement breakdown with complete color highlights."""
     rule = colorize("=" * 65, Colors.CYAN, use_color)
     subrule = colorize("-" * 65, Colors.CYAN, use_color)
     header_shared = "SHARED SECTIONS" if mode == "simple" else "SHARED SNIPPETS AND SAMPLES"
@@ -245,26 +304,29 @@ def print_snippet_report(
         print("  No shared musical snippets detected above threshold.")
     else:
         if mode == "simple":
-            print(f"{'Song A':<18}{'Song B':<18}{'Length':<10}{'Match':<11}{'Melody':<10}{'Tone'}")
+            hdr = f"{'Song A':<18}{'Song B':<18}{'Length':<10}{'Match':<11}{'Melody':<10}{'Tone'}"
         else:
-            print(f"{'Song A Location':<18}{'Song B Location':<18}{'Duration':<10}{'Composite':<11}{'Harmonic':<10}{'Timbral'}")
-        print("-" * 75)
+            hdr = f"{'Song A Location':<18}{'Song B Location':<18}{'Duration':<10}{'Composite':<11}{'Harmonic':<10}{'Timbral'}"
+        print(colorize(hdr, Colors.BOLD_WHITE, use_color))
+        print(colorize("-" * 75, Colors.DIM, use_color))
 
         for m in matches:
-            loc_a = f"{fmt_time(m.a_start)}-{fmt_time(m.a_end)}"
-            loc_b = f"{fmt_time(m.b_start)}-{fmt_time(m.b_end)}"
-            dur = f"{m.duration_a:.1f} s"
+            loc_a = colorize(f"{fmt_time(m.a_start)}-{fmt_time(m.a_end)}", Colors.CYAN, use_color)
+            loc_b = colorize(f"{fmt_time(m.b_start)}-{fmt_time(m.b_end)}", Colors.MAGENTA, use_color)
+            dur = c_num(f"{m.duration_a:.1f} s", Colors.BOLD_YELLOW, use_color)
 
-            comp_val = m.composite_similarity * 100
-            comp_str = f"{comp_val:.1f}%"
-            if comp_val >= 90.0:
-                comp_str = colorize(comp_str, Colors.BOLD_GREEN, use_color)
-            elif comp_val >= 75.0:
-                comp_str = colorize(comp_str, Colors.YELLOW, use_color)
+            comp_str = c_pct(m.composite_similarity * 100, use_color)
+            harm_str = c_pct(m.harmonic_similarity * 100, use_color)
+            timb_str = c_num(f"{m.timbral_similarity * 100:.1f}%", Colors.WHITE, use_color)
 
-            harm = f"{m.harmonic_similarity * 100:.1f}%"
-            timb = f"{m.timbral_similarity * 100:.1f}%"
-            print(f"{loc_a:<18}{loc_b:<18}{dur:<10}{comp_str:<20}{harm:<10}{timb}")
+            # Pad considering invisible ANSI escape codes
+            pad_a = 18 + (len(loc_a) - len(f"{fmt_time(m.a_start)}-{fmt_time(m.a_end)}"))
+            pad_b = 18 + (len(loc_b) - len(f"{fmt_time(m.b_start)}-{fmt_time(m.b_end)}"))
+            pad_dur = 10 + (len(dur) - len(f"{m.duration_a:.1f} s"))
+            pad_comp = 11 + (len(comp_str) - len(f"{m.composite_similarity * 100:.1f}%"))
+            pad_harm = 10 + (len(harm_str) - len(f"{m.harmonic_similarity * 100:.1f}%"))
+
+            print(f"{loc_a:<{pad_a}}{loc_b:<{pad_b}}{dur:<{pad_dur}}{comp_str:<{pad_comp}}{harm_str:<{pad_harm}}{timb_str}")
 
     sec_a, sec_b, pct_a, pct_b, gaps_a, gaps_b = compute_verified_coverage(a.duration, b.duration, matches)
 
@@ -273,39 +335,59 @@ def print_snippet_report(
         print(f"\n{subrule}")
         print(colorize(header_audit, Colors.BOLD_CYAN, use_color))
         print(subrule)
-        print(f"  Song A in Song B:  {sec_a:.1f} s ({pct_a:.1f}% of Song A)")
-        print(f"  Song B in Song A:  {sec_b:.1f} s ({pct_b:.1f}% of Song B)")
+        sec_a_col = c_num(f"{sec_a:.1f} s", Colors.BOLD_YELLOW, use_color)
+        pct_a_col = c_pct(pct_a, use_color)
+        sec_b_col = c_num(f"{sec_b:.1f} s", Colors.BOLD_YELLOW, use_color)
+        pct_b_col = c_pct(pct_b, use_color)
+        print(f"  Song A in Song B:  {sec_a_col} ({pct_a_col} of Song A)")
+        print(f"  Song B in Song A:  {sec_b_col} ({pct_b_col} of Song B)")
 
         if gaps_a and (not matches or pct_a < 99.0):
-            cut_label = "Cut from Song A (missing in Song B):"
-            print(colorize(f"\n  {cut_label}", Colors.YELLOW, use_color))
+            cut_label = colorize("Cut from Song A (missing in Song B):", Colors.BOLD_YELLOW, use_color)
+            print(f"\n  {cut_label}")
             for s, e in gaps_a:
-                print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
+                bullet = colorize("*", Colors.YELLOW, use_color)
+                t_range = colorize(f"{fmt_time(s)} - {fmt_time(e)}", Colors.BOLD_YELLOW, use_color)
+                d_str = colorize(f"({e - s:.1f} s)", Colors.DIM, use_color)
+                print(f"     {bullet} {t_range} {d_str}")
 
         if gaps_b and (not matches or pct_b < 99.0):
-            added_label = "New in Song B (added / extended):"
-            print(colorize(f"\n  {added_label}", Colors.GREEN, use_color))
+            added_label = colorize("New in Song B (added / extended):", Colors.BOLD_GREEN, use_color)
+            print(f"\n  {added_label}")
             for s, e in gaps_b:
-                print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
+                bullet = colorize("*", Colors.GREEN, use_color)
+                t_range = colorize(f"{fmt_time(s)} - {fmt_time(e)}", Colors.BOLD_GREEN, use_color)
+                d_str = colorize(f"({e - s:.1f} s)", Colors.DIM, use_color)
+                print(f"     {bullet} {t_range} {d_str}")
     else:
         header_audit = "STRUCTURAL EDIT AUDIT (Verified Bipartite Allocation)"
         print(f"\n{subrule}")
         print(colorize(header_audit, Colors.BOLD_CYAN, use_color))
         print(subrule)
-        print(f"  Song A in Song B (shared duration):  {sec_a:.1f} s ({pct_a:.1f}%)")
-        print(f"  Song B in Song A (shared duration):  {sec_b:.1f} s ({pct_b:.1f}%)")
+        sec_a_col = c_num(f"{sec_a:.1f} s", Colors.BOLD_YELLOW, use_color)
+        pct_a_col = c_pct(pct_a, use_color)
+        sec_b_col = c_num(f"{sec_b:.1f} s", Colors.BOLD_YELLOW, use_color)
+        pct_b_col = c_pct(pct_b, use_color)
+        print(f"  Song A in Song B (shared duration):  {sec_a_col} ({pct_a_col})")
+        print(f"  Song B in Song A (shared duration):  {sec_b_col} ({pct_b_col})")
 
         if gaps_a and (not matches or pct_a < 99.0):
-            cut_label = "[CUT] Unique to Song A (absent in Song B):"
-            print(colorize(f"\n  {cut_label}", Colors.YELLOW, use_color))
+            cut_label = colorize("[CUT] Unique to Song A (absent in Song B):", Colors.BOLD_YELLOW, use_color)
+            print(f"\n  {cut_label}")
             for s, e in gaps_a:
-                print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
+                bullet = colorize("*", Colors.YELLOW, use_color)
+                t_range = colorize(f"{fmt_time(s)} - {fmt_time(e)}", Colors.BOLD_YELLOW, use_color)
+                d_str = colorize(f"({e - s:.1f} s)", Colors.DIM, use_color)
+                print(f"     {bullet} {t_range} {d_str}")
 
         if gaps_b and (not matches or pct_b < 99.0):
-            added_label = "[ADDED] Unique to Song B (new / extended material):"
-            print(colorize(f"\n  {added_label}", Colors.GREEN, use_color))
+            added_label = colorize("[ADDED] Unique to Song B (new / extended material):", Colors.BOLD_GREEN, use_color)
+            print(f"\n  {added_label}")
             for s, e in gaps_b:
-                print(f"     * {fmt_time(s)} - {fmt_time(e)} ({e - s:.1f} s)")
+                bullet = colorize("*", Colors.GREEN, use_color)
+                t_range = colorize(f"{fmt_time(s)} - {fmt_time(e)}", Colors.BOLD_GREEN, use_color)
+                d_str = colorize(f"({e - s:.1f} s)", Colors.DIM, use_color)
+                print(f"     {bullet} {t_range} {d_str}")
 
 
 def generate_html_report(
@@ -392,7 +474,6 @@ def generate_html_report(
 
     html_lines.append("    </details>")
 
-    # Clickable Collapsible Shared Sections
     section_count = len(matches)
     html_lines.append(f"    <details open>")
     html_lines.append(f"      <summary>Shared Sections ({section_count} detected &bull; Click to collapse/expand)</summary>")
@@ -437,7 +518,7 @@ def print_full_report(
     mode: str = "precise",
     use_color: bool = True
 ) -> None:
-    """Prints the complete comparison report with intuitive wording and optional coloring."""
+    """Prints the complete comparison report with intuitive wording and vibrant coloring."""
     print_track_card("SONG A", a, mode=mode, use_color=use_color)
     print_track_card("SONG B", b, mode=mode, use_color=use_color)
     print_mix_deltas(a, b, mode=mode, use_color=use_color)

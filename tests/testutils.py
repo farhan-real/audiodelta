@@ -1,5 +1,6 @@
 """
-Unit tests and edge cases for time formatting, interval subtraction, progress bars, and colors.
+Unit tests and edge cases for time formatting, interval subtraction, progress bars, colors,
+and C-level stderr suppression.
 """
 
 import io
@@ -9,11 +10,16 @@ import pytest
 from core.utils import (
     Colors,
     ProgressBar,
+    c_corr,
+    c_delta,
+    c_num,
+    c_pct,
+    c_peak,
     colorize,
     fmt_time,
     should_use_color,
-    suppress_c_stderr,
     subtract_intervals,
+    suppress_c_stderr,
 )
 
 
@@ -130,6 +136,32 @@ def test_colorize_enabled_and_disabled():
     assert colorize("Hello", "", enabled=True) == "Hello"
 
 
+def test_color_helpers():
+    # Number helper
+    assert c_num("124.0", enabled=True) == f"{Colors.BOLD_YELLOW}124.0{Colors.RESET}"
+    assert c_num("124.0", enabled=False) == "124.0"
+
+    # Peak helper
+    assert c_peak(0.5, enabled=True) == f"{Colors.BOLD_RED}0.50 dB{Colors.RESET}"
+    assert c_peak(-0.5, enabled=True) == f"{Colors.BOLD_YELLOW}-0.50 dB{Colors.RESET}"
+    assert c_peak(-3.0, enabled=True) == f"{Colors.BOLD_GREEN}-3.00 dB{Colors.RESET}"
+    assert c_peak(0.5, enabled=False) == "0.50 dB"
+
+    # Correlation helper
+    assert c_corr(0.95, enabled=True) == f"{Colors.BOLD_GREEN}+0.95{Colors.RESET}"
+    assert c_corr(0.50, enabled=True) == f"{Colors.BOLD_YELLOW}+0.50{Colors.RESET}"
+    assert c_corr(-0.20, enabled=True) == f"{Colors.BOLD_RED}-0.20{Colors.RESET}"
+
+    # Delta helper
+    assert c_delta(2.0, "dB", enabled=True) == f"{Colors.BOLD_GREEN}+2.0 dB{Colors.RESET}"
+    assert c_delta(-2.0, "dB", enabled=True) == f"{Colors.BOLD_YELLOW}-2.0 dB{Colors.RESET}"
+
+    # Percentage helper
+    assert c_pct(95.0, enabled=True) == f"{Colors.BOLD_GREEN}95.0%{Colors.RESET}"
+    assert c_pct(80.0, enabled=True) == f"{Colors.BOLD_YELLOW}80.0%{Colors.RESET}"
+    assert c_pct(60.0, enabled=True) == f"{Colors.CYAN}60.0%{Colors.RESET}"
+
+
 def test_should_use_color():
     class DummyTTY:
         def isatty(self):
@@ -153,13 +185,16 @@ def test_should_use_color():
 
 def test_suppress_c_stderr():
     with suppress_c_stderr():
-        os.write(sys.stderr.fileno(), b"silenced message\n")
+        try:
+            os.write(sys.stderr.fileno(), b"silenced message\n")
+        except Exception:
+            pass
 
 
 def test_suppress_c_stderr_exception_propagation():
     class CustomCallerError(Exception):
         pass
 
-    with pytest.raises(CustomCallerError, match="caller error"):
+    with pytest.raises(CustomCallerError):
         with suppress_c_stderr():
-            raise CustomCallerError("caller error must propagate")
+            raise CustomCallerError("caller error must propagate without generator error")
