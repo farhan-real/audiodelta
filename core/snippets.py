@@ -1,5 +1,5 @@
 """
-Cross-correlation and slope-aware matched snippet detection with tempo scaling.
+Cross-correlation, slope-aware matched snippet detection, and contiguous consolidation.
 """
 
 import math
@@ -27,6 +27,58 @@ def resample_feature_matrix(features: np.ndarray, ratio: float) -> np.ndarray:
         resampled[i, :] = np.interp(new_times, orig_times, features[i, :])
 
     return resampled / np.maximum(np.linalg.norm(resampled, axis=0, keepdims=True), EPS)
+
+
+def consolidate_snippets(
+    snippets: List[MatchedSnippet],
+    tolerance: float = 0.5
+) -> List[MatchedSnippet]:
+    """
+    Consolidates contiguous or adjacent snippet fragments into unified arrangement blocks.
+    Significantly reduces clutter when songs share large continuous sections.
+    """
+    if not snippets or len(snippets) <= 1:
+        return snippets
+
+    sorted_snips = sorted(snippets, key=lambda s: s.a_start)
+    merged: List[MatchedSnippet] = [sorted_snips[0]]
+
+    for current in sorted_snips[1:]:
+        prev = merged[-1]
+        a_gap = current.a_start - prev.a_end
+        b_gap = current.b_start - prev.b_end
+        ratio_diff = abs(current.speed_ratio - prev.speed_ratio)
+
+        # Merge if consecutive in both tracks with identical tempo ratio and near-zero gap
+        if abs(a_gap) <= tolerance and abs(b_gap) <= tolerance and ratio_diff < 0.01:
+            total_dur_a = (current.a_end - prev.a_start)
+            total_dur_b = (current.b_end - prev.b_start)
+
+            # Weighted average similarity based on individual segment durations
+            w_prev = max(EPS, prev.duration_a)
+            w_curr = max(EPS, current.duration_a)
+            total_w = w_prev + w_curr
+
+            merged_comp = (prev.composite_similarity * w_prev + current.composite_similarity * w_curr) / total_w
+            merged_harm = (prev.harmonic_similarity * w_prev + current.harmonic_similarity * w_curr) / total_w
+            merged_timb = (prev.timbral_similarity * w_prev + current.timbral_similarity * w_curr) / total_w
+
+            merged[-1] = MatchedSnippet(
+                a_start=prev.a_start,
+                a_end=current.a_end,
+                b_start=prev.b_start,
+                b_end=current.b_end,
+                duration_a=total_dur_a,
+                duration_b=total_dur_b,
+                speed_ratio=prev.speed_ratio,
+                composite_similarity=merged_comp,
+                harmonic_similarity=merged_harm,
+                timbral_similarity=merged_timb
+            )
+        else:
+            merged.append(current)
+
+    return merged
 
 
 def find_snippets(
@@ -164,5 +216,6 @@ def find_snippets(
         if not overlap:
             filtered.append(cand)
 
-    filtered.sort(key=lambda x: x.a_start)
-    return filtered
+    consolidated = consolidate_snippets(filtered, tolerance=0.5)
+    consolidated.sort(key=lambda x: x.a_start)
+    return consolidated

@@ -1,9 +1,45 @@
 """
-Utility functions for time formatting, interval subtraction, and terminal progress bars.
+Utility functions for time formatting, interval subtraction, progress bars, and ANSI terminal colors.
 """
 
+import os
 import sys
-from typing import List, Tuple
+from typing import List, Optional, Tuple
+
+
+class Colors:
+    """Standard ANSI color and style escape sequences."""
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
+    BOLD_RED = "\033[1;31m"
+    BOLD_GREEN = "\033[1;32m"
+    BOLD_YELLOW = "\033[1;33m"
+    BOLD_CYAN = "\033[1;36m"
+    BOLD_WHITE = "\033[1;37m"
+
+
+def should_use_color(file=sys.stdout, force_color: Optional[bool] = None) -> bool:
+    """Determines whether ANSI color codes should be emitted based on TTY and environment."""
+    if force_color is not None:
+        return force_color
+    if os.environ.get("NO_COLOR"):
+        return False
+    return hasattr(file, "isatty") and file.isatty()
+
+
+def colorize(text: str, color_code: str, enabled: bool = True) -> str:
+    """Wraps text with ANSI color codes when color is enabled."""
+    if not enabled or not color_code:
+        return text
+    return f"{color_code}{text}{Colors.RESET}"
 
 
 class ProgressBar:

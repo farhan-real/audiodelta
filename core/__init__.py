@@ -17,15 +17,29 @@ from core.report import (
     print_snippet_report,
     print_track_card,
 )
-from core.snippets import find_snippets, resample_feature_matrix
+from core.snippets import (
+    consolidate_snippets,
+    find_snippets,
+    resample_feature_matrix,
+)
 from core.stereo import evaluate_stereo_field
-from core.utils import ProgressBar, fmt_time, subtract_intervals
+from core.utils import (
+    Colors,
+    ProgressBar,
+    colorize,
+    fmt_time,
+    should_use_color,
+    subtract_intervals,
+)
 
 __all__ = [
     "MatchedSnippet",
     "StereoAudit",
     "TrackAnalysis",
+    "Colors",
     "ProgressBar",
+    "colorize",
+    "should_use_color",
     "fmt_time",
     "subtract_intervals",
     "compute_peak_and_true_peak",
@@ -35,6 +49,7 @@ __all__ = [
     "extract_features",
     "analyze_track",
     "resample_feature_matrix",
+    "consolidate_snippets",
     "find_snippets",
     "compute_verified_coverage",
     "print_track_card",

@@ -1,9 +1,17 @@
 """
-Unit tests and edge cases for time formatting, interval subtraction, and progress bars.
+Unit tests and edge cases for time formatting, interval subtraction, progress bars, and colors.
 """
 
 import io
-from core.utils import ProgressBar, fmt_time, subtract_intervals
+import os
+from core.utils import (
+    Colors,
+    ProgressBar,
+    colorize,
+    fmt_time,
+    should_use_color,
+    subtract_intervals,
+)
 
 
 def test_fmt_time_zero():
@@ -87,7 +95,6 @@ def test_subtract_intervals_discards_sub_threshold():
 
 
 def test_progress_bar_non_tty():
-    # In non-TTY environments (like StringIO without isatty=True), no output is emitted
     stream = io.StringIO()
     pb = ProgressBar(total=10, prefix="Test", length=20, file=stream)
     pb.update(5)
@@ -112,3 +119,30 @@ def test_progress_bar_tty():
     pb.finish(message="Done")
     final_val = stream.getvalue()
     assert "Done\n" in final_val
+
+
+def test_colorize_enabled_and_disabled():
+    assert colorize("Hello", Colors.GREEN, enabled=True) == f"{Colors.GREEN}Hello{Colors.RESET}"
+    assert colorize("Hello", Colors.GREEN, enabled=False) == "Hello"
+    assert colorize("Hello", "", enabled=True) == "Hello"
+
+
+def test_should_use_color():
+    class DummyTTY:
+        def isatty(self):
+            return True
+
+    class DummyNonTTY:
+        def isatty(self):
+            return False
+
+    assert should_use_color(force_color=True) is True
+    assert should_use_color(force_color=False) is False
+    assert should_use_color(file=DummyTTY()) is True
+    assert should_use_color(file=DummyNonTTY()) is False
+
+    os.environ["NO_COLOR"] = "1"
+    try:
+        assert should_use_color(file=DummyTTY()) is False
+    finally:
+        os.environ.pop("NO_COLOR", None)
